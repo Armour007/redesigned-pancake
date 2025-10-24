@@ -1,0 +1,18 @@
+# Environment variables
+.env
+*.env.*
+
+# Node dependencies
+node_modules/
+
+# SvelteKit build / cache files
+.svelte-kit/
+build/
+
+# Go build files
+*.exe
+*.out
+
+# OS generated files
+.DS_Store
+Thumbs.db
