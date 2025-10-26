@@ -1,11 +1,12 @@
 <script lang="ts">
-	import favicon from '$lib/assets/favicon.svg';
-
-	let { children } = $props();
+  import '../app.css'; // Imports Tailwind styles
 </script>
 
-<svelte:head>
-	<link rel="icon" href={favicon} />
-</svelte:head>
+<div class="min-h-screen bg-[#111111] text-white font-sans">
+  <slot /> </div>
 
-{@render children?.()}
+<style lang="postcss">
+  :global(body) {
+    font-family: 'Inter', sans-serif; /* Optional: Ensure Inter font is used if Tailwind doesn't pick it up */
+  }
+</style>

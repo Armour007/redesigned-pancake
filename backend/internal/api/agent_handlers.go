@@ -1,16 +1,16 @@
 package api
 
 import (
+	"database/sql" // Added import for sql.ErrNoRows
 	"log"
 	"net/http"
 	"time"
 
+	database "github.com/Armour007/aura-backend/internal"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-
-	// Adjust import paths
-	database "github.com/Armour007/aura-backend/internal"
-	//"github.com/Armour007/aura-backend/internal/utils" // Might need later
+	// Adjust import paths if necessary
+	// "github.com/Armour007/aura-backend/internal/utils" // Might need later
 )
 
 // CreateAgent handles requests to create a new agent
@@ -79,7 +79,6 @@ func CreateAgent(c *gin.Context) {
 	c.JSON(http.StatusCreated, response)
 }
 
-// GetAgents (Leave empty for now)
 // GetAgents handles requests to list agents for an organization
 func GetAgents(c *gin.Context) {
 	orgIdStr := c.Param("orgId")
@@ -127,7 +126,60 @@ func GetAgents(c *gin.Context) {
 	c.JSON(http.StatusOK, responseAgents)
 }
 
-// UpdateAgent handles requests to update an existing agent
+// --- START UPDATED GetAgentByID ---
+// GetAgentByID handles requests to get a single agent by its ID
+func GetAgentByID(c *gin.Context) {
+	orgIdStr := c.Param("orgId")
+	agentIdStr := c.Param("agentId")
+
+	// Validate IDs
+	orgId, err := uuid.Parse(orgIdStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid organization ID format"})
+		return
+	}
+	agentId, err := uuid.Parse(agentIdStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid agent ID format"})
+		return
+	}
+
+	// Get user ID from context
+	_, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "User ID not found in context"})
+		return
+	}
+	// TODO: Add authorization checks (user in org?)
+
+	// Fetch the agent from the database
+	var agent database.Agent
+	query := `SELECT id, organization_id, name, description, created_by_user_id, created_at, updated_at
+	          FROM agents WHERE id = $1 AND organization_id = $2` // Ensure agent belongs to the org
+
+	err = database.DB.Get(&agent, query, agentId, orgId)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found or does not belong to this organization"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error: " + err.Error()})
+		}
+		return
+	}
+
+	// Respond with the agent details
+	response := AgentResponse{
+		ID:             agent.ID,
+		OrganizationID: agent.OrganizationID,
+		Name:           agent.Name,
+		Description:    agent.Description,
+		CreatedAt:      agent.CreatedAt,
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// --- END UPDATED GetAgentByID ---
+
 // UpdateAgent handles requests to update an existing agent
 func UpdateAgent(c *gin.Context) {
 	var req UpdateAgentRequest
@@ -161,7 +213,6 @@ func UpdateAgent(c *gin.Context) {
 	// TODO: Add authorization checks (user in org? agent in org?)
 
 	// Build the UPDATE query dynamically based on provided fields
-	// This is a bit more complex to handle optional fields correctly
 	query := "UPDATE agents SET updated_at = :updated_at"
 	params := map[string]interface{}{
 		"id":         agentId,
@@ -178,10 +229,9 @@ func UpdateAgent(c *gin.Context) {
 		params["description"] = *req.Description
 	} else if c.Request.Method == "PUT" && c.ContentType() == "application/json" {
 		// Handle explicit null setting for description if needed (optional)
-		// Check if 'description' key exists and is null in the raw JSON
 	}
 
-	query += " WHERE id = :id AND organization_id = :org_id" // Ensure user can only update agents in their org
+	query += " WHERE id = :id AND organization_id = :org_id"
 
 	result, err := database.DB.NamedExec(query, params)
 	if err != nil {
@@ -189,7 +239,6 @@ func UpdateAgent(c *gin.Context) {
 		return
 	}
 
-	// Check if any row was actually updated
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check rows affected: " + err.Error()})
@@ -200,11 +249,10 @@ func UpdateAgent(c *gin.Context) {
 		return
 	}
 
-	// Fetch the updated agent to return it (optional but good practice)
+	// Fetch the updated agent to return it
 	var updatedAgent database.Agent
 	getErr := database.DB.Get(&updatedAgent, "SELECT * FROM agents WHERE id = $1", agentId)
 	if getErr != nil {
-		// Log error but maybe still return success if update worked
 		log.Printf("Error fetching updated agent %s: %v", agentId, getErr)
 		c.JSON(http.StatusOK, gin.H{"message": "Agent updated successfully, but failed to fetch latest data"})
 		return
@@ -215,13 +263,12 @@ func UpdateAgent(c *gin.Context) {
 		OrganizationID: updatedAgent.OrganizationID,
 		Name:           updatedAgent.Name,
 		Description:    updatedAgent.Description,
-		CreatedAt:      updatedAgent.CreatedAt, // Note: returning CreatedAt, not UpdatedAt
+		CreatedAt:      updatedAgent.CreatedAt,
 	}
 
 	c.JSON(http.StatusOK, response)
 }
 
-// DeleteAgent handles requests to delete an agent
 // DeleteAgent handles requests to delete an agent
 func DeleteAgent(c *gin.Context) {
 	orgIdStr := c.Param("orgId")
@@ -249,13 +296,12 @@ func DeleteAgent(c *gin.Context) {
 
 	// Delete from database
 	query := `DELETE FROM agents WHERE id = $1 AND organization_id = $2`
-	result, err := database.DB.Exec(query, agentId, orgId) // Use Exec for simple delete
+	result, err := database.DB.Exec(query, agentId, orgId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete agent: " + err.Error()})
 		return
 	}
 
-	// Check if any row was actually deleted
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check rows affected: " + err.Error()})

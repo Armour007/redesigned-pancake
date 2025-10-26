@@ -62,3 +62,23 @@ type UpdateAgentRequest struct {
 	Name        *string `json:"name,omitempty"`
 	Description *string `json:"description,omitempty"`
 }
+
+// APIKeyInfoResponse defines the safe structure for returning API key data
+type APIKeyInfoResponse struct {
+	ID         uuid.UUID  `json:"id"`
+	Name       string     `json:"name"`
+	KeyPrefix  string     `json:"key_prefix"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+}
+
+// NewAPIKeyResponse includes the secret key *only* upon creation
+type NewAPIKeyResponse struct {
+	ID        uuid.UUID  `json:"id"`
+	Name      string     `json:"name"`
+	KeyPrefix string     `json:"key_prefix"`
+	SecretKey string     `json:"secret_key"` // The actual key, shown once
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}

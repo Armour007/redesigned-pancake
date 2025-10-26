@@ -1,0 +1,106 @@
+<script lang="ts">
+  import { page } from '$app/stores'; // To get the current path for active link styling
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import '../../app.css';// Import Tailwind
+
+  // Simple check on mount if the token exists.
+  // A more robust solution would use hooks or a dedicated auth store.
+  onMount(() => {
+    const token = localStorage.getItem('aura_token');
+    if (!token) {
+      goto('/login'); // Redirect to login if no token
+    }
+  });
+
+  // Basic user info - replace with real data later
+  const user = {
+    avatarUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDjNU6OCj_kWgKMXGT55utNMEizPWej8vSPxVBR7NRfC79fixuCdWpIctpd1_ViIzxwqAv59O1Rw2NyrGZF1mcGyajgxlIlDX4JiXTjwEdMCtNZvPuq03RM2gO6VJbnf6sWQ_tKcnjLxNfLbH2-2zjCIyJZoF2hKdX65FKn_f7rCp8OA4YgjZaSUjn8He5efAbuQ3_pODEcCyLXpHEaorRaY-5N6T9JZ20CFf1--HHYVNBPmpZ3WKLRoO9vbXROtA1VaUndXw8odveu', // Placeholder
+  };
+
+  // Sidebar navigation items
+  const navItems = [
+    { href: '/dashboard', label: 'Overview', icon: 'dashboard' }, // Material Symbols icon names
+    { href: '/agents', label: 'Agents', icon: 'memory' },
+    { href: '/logs', label: 'Logs', icon: 'article' },
+    { href: '/settings', label: 'Settings', icon: 'settings' },
+    { href: '/apikeys', label: 'API Keys', icon: 'key' },
+  ];
+
+  function handleLogout() {
+      localStorage.removeItem('aura_token');
+      goto('/login');
+  }
+
+</script>
+
+<div class="flex min-h-screen bg-[#111111] text-white">
+  <aside class="w-64 bg-[#111111] border-r border-white/10 flex flex-col fixed inset-y-0 left-0">
+    <div class="p-6 flex items-center gap-3 h-16 border-b border-white/10">
+      <div class="w-8 h-8 bg-[#7C3AED] rounded-full" />
+      <h1 class="text-xl font-bold text-white">AURA</h1>
+    </div>
+
+    <nav class="flex-1 px-4 py-4 space-y-2">
+      {#each navItems as item}
+        <a
+          href={item.href}
+          class={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors duration-150 ${
+            $page.url.pathname === item.href
+              ? 'bg-[#7C3AED] text-white'
+              : 'text-gray-400 hover:bg-white/10 hover:text-gray-200'
+          }`}
+        >
+          <span class="material-symbols-outlined text-xl">{item.icon}</span>
+          <span class="text-sm font-medium">{item.label}</span>
+        </a>
+      {/each}
+    </nav>
+
+    <div class="p-4 mt-auto border-t border-white/10">
+      <a href="/docs" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-400 hover:bg-white/10 hover:text-gray-200 transition-colors duration-150">
+        <span class="material-symbols-outlined text-xl">help_outline</span>
+        <span class="text-sm font-medium">Help & Docs</span>
+      </a>
+       <button on:click={handleLogout} class="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-gray-400 hover:bg-white/10 hover:text-gray-200 transition-colors duration-150">
+        <span class="material-symbols-outlined text-xl">logout</span>
+        <span class="text-sm font-medium">Logout</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="flex-1 flex flex-col ml-64"> <!-- Offset by sidebar width -->
+    <header class="p-6 flex items-center justify-between border-b border-white/10">
+      <div class="flex items-center gap-4">
+        <button class="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-gray-200">
+          <span class="material-symbols-outlined text-xl">notifications</span>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-4">
+        {#if user.avatarUrl}
+          <img src={user.avatarUrl} alt="User Avatar" class="w-8 h-8 rounded-full" />
+        {:else}
+          <div class="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center text-sm font-medium">
+            ?
+          </div>
+        {/if}
+      </div>
+    </header>
+
+    <main class="flex-1 p-8">
+      <slot /> <!-- Page content goes here -->
+    </main>
+  </div>
+</div>
+
+<style>
+  /* Ensure Material Symbols are loaded */
+  .material-symbols-outlined {
+    font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 24
+  }
+</style>

@@ -2,7 +2,9 @@ package main
 
 import (
 	"log"
+	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
 	// Import your database and api packages - Adjust paths
@@ -14,7 +16,20 @@ func main() {
 	database.Connect()
 	log.Println("Starting AURA backend server on :8080...")
 	router := gin.Default()
-
+	// --- START CORS MIDDLEWARE ---
+	// Apply CORS middleware. Default() allows all origins for development.
+	// For production, configure specific origins: cors.New(cors.Config{...})
+	// Replace the simple cors.Default() with this configuration:
+	config := cors.Config{
+		AllowAllOrigins:  true, // Allow requests from any origin (good for development)
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "Authorization"}, // <-- Explicitly allow Authorization
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}
+	router.Use(cors.New(config))
+	// --- END CORS MIDDLEWARE ---
 	// --- Public Routes (No Auth Needed) ---
 	authRoutes := router.Group("/auth")
 	{

@@ -60,3 +60,14 @@ type EventLog struct {
 	DecisionReason   *string         `db:"decision_reason"`   // Pointer for nullable
 	ClientIPAddress  *net.IP         `db:"client_ip_address"` // Pointer for nullable
 }
+type APIKey struct {
+	ID              uuid.UUID  `db:"id"`
+	OrganizationID  uuid.UUID  `db:"organization_id"`
+	Name            string     `db:"name"`
+	KeyPrefix       string     `db:"key_prefix"`
+	HashedKey       string     `db:"hashed_key"` // Never return this via API
+	CreatedByUserID uuid.UUID  `db:"created_by_user_id"`
+	LastUsedAt      *time.Time `db:"last_used_at"` // Pointer for nullable
+	ExpiresAt       *time.Time `db:"expires_at"`   // Pointer for nullable
+	CreatedAt       time.Time  `db:"created_at"`
+}
