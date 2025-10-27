@@ -12,5 +12,22 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data # Saves data even if container stops
 
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: aura_user
+      DB_PASSWORD: your_strong_password
+      DB_NAME: aura_db
+      DB_SSLMODE: disable
+      JWT_SECRET: change_me_in_prod
+    depends_on:
+      - db
+    ports:
+      - "8080:8080"
+
 volumes:
   postgres_data:

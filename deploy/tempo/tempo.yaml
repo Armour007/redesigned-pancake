@@ -1,0 +1,30 @@
+server:
+  http_listen_port: 3200
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+compactor:
+  compaction:
+    block_retention: 48h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tmp/tempo
+    wal:
+      path: /tmp/tempo/wal
+
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+  storage:
+    path: /tmp/tempo/generator
+
+overrides:
+  metrics_generator_processors: [service-graphs, span-metrics]

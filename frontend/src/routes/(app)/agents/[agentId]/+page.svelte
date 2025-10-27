@@ -3,8 +3,11 @@
 	import type { PageData } from './$types';
 	import { page } from '$app/stores'; // Used for potential future features like active link styling
 	import RuleBuilderModal from '$lib/components/RuleBuilderModal.svelte';
+	import Modal from '$lib/components/Modal.svelte';
 	import { agentContext } from '$lib/stores/agentContext'; // Import the shared store
+	import { API_BASE, authHeaders } from '$lib/api';
 	import type { AgentDetailPageLoadData } from './+page'; // Import the specific type from +page.ts
+  import Alert from '$lib/components/Alert.svelte';
 
 	// Props from load function
 	export let data: AgentDetailPageLoadData;
@@ -37,13 +40,85 @@
 		alert(`Delete Rule ${ruleId} functionality coming soon!`);
 		// TODO: Add API call to delete rule, then refresh data
 	}
+	// --- API Keys Modal ---
+	let showCreateKeyModal = false;
+	let newKeyName = '';
+	let newKeyExpiry = '';
+	let createKeyLoading = false;
+	let createKeyError = '';
+	let createdSecretKey: string | null = null; // shown once
+
 	function handleGenerateNewKey() {
-		alert('Generate New Key functionality coming soon!');
-		// TODO: Add API call to create key, show secret once, then refresh data
+		showCreateKeyModal = true;
+		newKeyName = '';
+		newKeyExpiry = '';
+		createdSecretKey = null;
+		createKeyError = '';
 	}
-	function handleRevokeKey(keyId: string) {
-		alert(`Revoke Key ${keyId} functionality coming soon!`);
-		// TODO: Add API call to delete key, then refresh data
+
+	async function createApiKey() {
+		if (!data.organizationId) {
+			createKeyError = 'Missing organization id';
+			return;
+		}
+		if (!newKeyName.trim()) {
+			createKeyError = 'Name is required';
+			return;
+		}
+		createKeyLoading = true;
+		createKeyError = '';
+		try {
+			const token = localStorage.getItem('aura_token');
+			if (!token) {
+				createKeyError = 'Authentication token missing. Please log in again.';
+				createKeyLoading = false;
+				return;
+			}
+			const body: any = { name: newKeyName.trim() };
+			if (newKeyExpiry) {
+				// Expecting YYYY-MM-DD format
+				body.expires_at = new Date(newKeyExpiry).toISOString();
+			}
+			const res = await fetch(`${API_BASE}/organizations/${data.organizationId}/apikeys`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
+				body: JSON.stringify(body)
+			});
+			const json = await res.json();
+			if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+			createdSecretKey = json.secret_key;
+		} catch (e: any) {
+			createKeyError = e.message || 'Failed to create key';
+		} finally {
+			createKeyLoading = false;
+		}
+	}
+
+	function closeCreateKeyModal() {
+		showCreateKeyModal = false;
+		createdSecretKey = null;
+		window.location.reload();
+	}
+	async function handleRevokeKey(keyId: string) {
+		if (!confirm('Revoke this API key? This cannot be undone.')) return;
+		try {
+			const token = localStorage.getItem('aura_token');
+			if (!token) {
+				alert('Authentication token missing. Please log in again.');
+				return;
+			}
+			const res = await fetch(`${API_BASE}/organizations/${data.organizationId}/apikeys/${keyId}`, {
+				method: 'DELETE',
+				headers: authHeaders(token)
+			});
+			if (!res.ok && res.status !== 204) {
+				const json = await res.json().catch(() => ({}));
+				throw new Error(json.error || `HTTP ${res.status}`);
+			}
+			window.location.reload();
+		} catch (e) {
+			alert('Failed to revoke key');
+		}
 	}
 
 	// --- Reactive statement to UPDATE the shared store ---
@@ -73,7 +148,7 @@
 			<div>
 				<h2 class="text-3xl font-bold text-red-400">Error Loading Agent</h2>
 				<p class="text-sm text-gray-400 font-mono mt-1 break-all">{data.agentId ?? 'ID Unavailable'}</p>
-				<p class="text-red-300 mt-2">{data.error}</p>
+				<Alert variant="error">{data.error}</Alert>
 			</div>
 		{:else if data.agent}
 			<div>
@@ -227,25 +302,36 @@
 					<div class="flex items-center justify-between">
 						<h3 class="text-xl font-semibold text-white">Event Logs</h3>
 					</div>
-					{#if false} <div class="overflow-hidden rounded-lg border border-gray-700">
+					{#if data.logs && data.logs.length > 0}
+						<div class="overflow-hidden rounded-lg border border-gray-700">
 							<table class="min-w-full divide-y divide-gray-700">
 								<thead class="bg-gray-800/50">
 									<tr>
-										<th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Timestamp</th>
-										<th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Decision</th>
-										<th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Reason</th>
-										<th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Context (JSON)</th>
-										<th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">IP Address</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Timestamp</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Decision</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Reason</th>
+										<th class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Context</th>
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-gray-800 bg-[#1A1A1A]">
-									<tr>
-										<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-400"></td>
-										<td class="px-4 py-3 whitespace-nowrap text-sm"></td>
-										<td class="px-4 py-3 text-sm text-gray-300"></td>
-										<td class="px-4 py-3 text-sm text-gray-300 font-mono"></td>
-										<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-400"></td>
-									</tr>
+									{#each data.logs as log (log.id)}
+										<tr>
+											<td class="px-4 py-3 whitespace-nowrap text-sm text-gray-400">{formatDate(log.timestamp)}</td>
+											<td class="px-4 py-3 whitespace-nowrap text-sm">
+												{#if log.decision === 'ALLOWED'}
+													<span class="inline-flex items-center rounded-full bg-green-900/40 px-2.5 py-0.5 text-xs font-medium text-green-300">ALLOWED</span>
+												{:else if log.decision === 'DENIED'}
+													<span class="inline-flex items-center rounded-full bg-red-900/40 px-2.5 py-0.5 text-xs font-medium text-red-300">DENIED</span>
+												{:else}
+													<span class="inline-flex items-center rounded-full bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-300">{log.event_type}</span>
+												{/if}
+											</td>
+											<td class="px-4 py-3 whitespace-pre-wrap text-xs text-gray-300">{log.decision_reason || ''}</td>
+											<td class="px-4 py-3 text-xs text-gray-300 font-mono">
+												<pre class="whitespace-pre-wrap max-w-lg overflow-x-auto"><code>{JSON.stringify(log.request_details, null, 2)}</code></pre>
+											</td>
+										</tr>
+									{/each}
 								</tbody>
 							</table>
 						</div>
@@ -267,7 +353,40 @@
 		/>
 	{/if}
 
-</div> ```
+	<!-- Create API Key Modal -->
+	{#if showCreateKeyModal}
+		<Modal title="Generate API Key" bind:showModal={showCreateKeyModal} on:close={closeCreateKeyModal}>
+			{#if createdSecretKey}
+				<div class="space-y-3">
+					<p class="text-sm text-gray-300">Copy this secret now. You won’t be able to see it again.</p>
+					<div class="p-3 bg-[#111111] border border-[#333333] rounded font-mono text-xs break-all">{createdSecretKey}</div>
+					<div class="flex justify-end">
+						<button class="px-4 py-2 text-sm font-medium text-white bg-[#7C3AED] hover:bg-[#6d28d9] rounded" on:click={closeCreateKeyModal}>Done</button>
+					</div>
+				</div>
+			{:else}
+				<form on:submit|preventDefault={createApiKey} class="space-y-4">
+					<div>
+						<label class="block text-sm text-gray-300" for="keyName">Name</label>
+						<input id="keyName" class="mt-1 w-full p-2 bg-[#111111] text-white rounded border border-[#333333] text-sm" bind:value={newKeyName} placeholder="e.g., Production Key" />
+					</div>
+					<div>
+						<label class="block text-sm text-gray-300" for="keyExpiry">Expiry (optional)</label>
+						<input id="keyExpiry" type="date" class="mt-1 w-full p-2 bg-[#111111] text-white rounded border border-[#333333] text-sm" bind:value={newKeyExpiry} />
+					</div>
+					{#if createKeyError}
+						<Alert variant="error">{createKeyError}</Alert>
+					{/if}
+					<div class="flex justify-end gap-3">
+						<button type="button" class="px-4 py-2 text-sm font-medium text-gray-300 bg-transparent rounded hover:bg-white/10" on:click={() => (showCreateKeyModal = false)}>Cancel</button>
+						<button type="submit" class="px-4 py-2 text-sm font-medium text-white bg-[#7C3AED] hover:bg-[#6d28d9] rounded disabled:opacity-50" disabled={createKeyLoading}>{createKeyLoading ? 'Creating…' : 'Create Key'}</button>
+					</div>
+				</form>
+			{/if}
+		</Modal>
+	{/if}
+
+	</div>
 
 
 

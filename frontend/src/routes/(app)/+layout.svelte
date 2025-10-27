@@ -3,20 +3,32 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import '../../app.css';// Import Tailwind
+  import { API_BASE } from '$lib/api';
 
   // Simple check on mount if the token exists.
   // A more robust solution would use hooks or a dedicated auth store.
+  let user: { full_name?: string; email?: string; avatarUrl?: string } = {};
+  let menuOpen = false;
+
+  async function loadMe() {
+    const token = localStorage.getItem('aura_token');
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE}/me`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) return;
+      const me = await res.json();
+      user.full_name = me.full_name;
+      user.email = me.email;
+    } catch {}
+  }
+
   onMount(() => {
     const token = localStorage.getItem('aura_token');
     if (!token) {
       goto('/login'); // Redirect to login if no token
     }
+    loadMe();
   });
-
-  // Basic user info - replace with real data later
-  const user = {
-    avatarUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDjNU6OCj_kWgKMXGT55utNMEizPWej8vSPxVBR7NRfC79fixuCdWpIctpd1_ViIzxwqAv59O1Rw2NyrGZF1mcGyajgxlIlDX4JiXTjwEdMCtNZvPuq03RM2gO6VJbnf6sWQ_tKcnjLxNfLbH2-2zjCIyJZoF2hKdX65FKn_f7rCp8OA4YgjZaSUjn8He5efAbuQ3_pODEcCyLXpHEaorRaY-5N6T9JZ20CFf1--HHYVNBPmpZ3WKLRoO9vbXROtA1VaUndXw8odveu', // Placeholder
-  };
 
   // Sidebar navigation items
   const navItems = [
@@ -37,7 +49,7 @@
 <div class="flex min-h-screen bg-[#111111] text-white">
   <aside class="w-64 bg-[#111111] border-r border-white/10 flex flex-col fixed inset-y-0 left-0">
     <div class="p-6 flex items-center gap-3 h-16 border-b border-white/10">
-      <div class="w-8 h-8 bg-[#7C3AED] rounded-full" />
+      <div class="w-8 h-8 bg-[#7C3AED] rounded-full"></div>
       <h1 class="text-xl font-bold text-white">AURA</h1>
     </div>
 
@@ -72,17 +84,27 @@
   <div class="flex-1 flex flex-col ml-64"> <!-- Offset by sidebar width -->
     <header class="p-6 flex items-center justify-between border-b border-white/10">
       <div class="flex items-center gap-4">
-        <button class="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-gray-200">
-          <span class="material-symbols-outlined text-xl">notifications</span>
+        <button class="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-gray-200" aria-label="Notifications">
+          <span class="material-symbols-outlined text-xl" aria-hidden="true">notifications</span>
         </button>
       </div>
 
-      <div class="flex items-center gap-4">
-        {#if user.avatarUrl}
-          <img src={user.avatarUrl} alt="User Avatar" class="w-8 h-8 rounded-full" />
-        {:else}
+      <div class="relative">
+        <button class="flex items-center gap-3 px-3 py-2 rounded hover:bg-white/10" on:click={() => (menuOpen = !menuOpen)}>
           <div class="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center text-sm font-medium">
-            ?
+            {(user.full_name || user.email || '?').toString().charAt(0).toUpperCase()}
+          </div>
+          <div class="text-left hidden sm:block">
+            <div class="text-sm font-medium">{user.full_name || 'User'}</div>
+            <div class="text-xs text-gray-400">{user.email || ''}</div>
+          </div>
+          <span class="material-symbols-outlined text-xl">expand_more</span>
+        </button>
+        {#if menuOpen}
+          <div class="absolute right-0 mt-2 w-48 bg-[#151515] border border-white/10 rounded-lg shadow-xl z-20">
+            <a href="/settings" class="block px-4 py-2 text-sm text-gray-200 hover:bg-white/10">Profile & Settings</a>
+            <a href="/apikeys" class="block px-4 py-2 text-sm text-gray-200 hover:bg-white/10">API Keys</a>
+            <button on:click={handleLogout} class="w-full text-left px-4 py-2 text-sm text-red-300 hover:bg-white/10">Logout</button>
           </div>
         {/if}
       </div>

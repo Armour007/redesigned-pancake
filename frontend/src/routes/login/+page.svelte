@@ -1,5 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'; // <-- Import goto
+  import { API_BASE, authHeaders } from '$lib/api';
+  import Alert from '$lib/components/Alert.svelte';
 
   let email = '';
   let password = '';
@@ -10,7 +12,7 @@
     isLoading = true;
     errorMessage = '';
     try {
-      const response = await fetch('http://localhost:8080/auth/login', {
+  const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -30,6 +32,19 @@
       // Store token securely (localStorage is okay for MVP)
       localStorage.setItem('aura_token', data.token);
 
+      // Fetch user's orgs and store first org id for dashboard
+      try {
+        const orgRes = await fetch(`${API_BASE}/organizations/mine`, {
+          headers: authHeaders(data.token)
+        });
+        if (orgRes.ok) {
+          const orgs = await orgRes.json();
+          if (Array.isArray(orgs) && orgs.length > 0) {
+            localStorage.setItem('aura_org_id', orgs[0].id);
+          }
+        }
+      } catch (_) {}
+
       // Redirect to the dashboard page
       await goto('/dashboard'); // Use await with goto
 
@@ -47,7 +62,7 @@
 <div class="flex items-center justify-center min-h-screen px-4">
   <div class="w-full max-w-md p-8 space-y-6 bg-[#1A1A1A] rounded-xl shadow-lg border border-[#333333]">
     <div class="flex justify-center">
-      <div class="w-10 h-10 bg-[#7C3AED] rounded-full" />
+      <div class="w-10 h-10 bg-[#7C3AED] rounded-full"></div>
     </div>
     <h1 class="text-2xl font-bold text-center text-white">
       Welcome Back
@@ -83,7 +98,7 @@
       </div>
 
       {#if errorMessage}
-        <p class="text-sm text-red-400">{errorMessage}</p>
+        <Alert variant="error">{errorMessage}</Alert>
       {/if}
 
       <div>

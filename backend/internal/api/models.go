@@ -82,3 +82,9 @@ type NewAPIKeyResponse struct {
 	CreatedAt time.Time  `json:"created_at"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
+
+// NewAPIKeyRequest defines payload to create an API key
+type NewAPIKeyRequest struct {
+	Name      string     `json:"name" binding:"required"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}

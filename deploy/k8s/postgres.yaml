@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aura-postgres-pvc
+  namespace: aura
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aura-postgres
+  namespace: aura
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aura-postgres
+  template:
+    metadata:
+      labels:
+        app: aura-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: aura-backend-config
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: aura-backend-config
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: aura-backend-secrets
+                  key: DB_PASSWORD
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: aura-postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aura-postgres
+  namespace: aura
+spec:
+  selector:
+    app: aura-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP

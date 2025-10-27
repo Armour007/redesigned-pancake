@@ -1,5 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'; // Import goto for redirection
+  import { API_BASE } from '$lib/api';
+  import Alert from '$lib/components/Alert.svelte';
 
   let fullName = '';
   let email = '';
@@ -13,7 +15,7 @@
     errorMessage = '';
     successMessage = '';
     try {
-      const response = await fetch('http://localhost:8080/auth/register', { // Backend register URL
+      const response = await fetch(`${API_BASE}/auth/register`, { // Backend register URL
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -29,6 +31,10 @@
 
       // SUCCESS! Show message and maybe redirect to login after a delay
       console.log('Registration successful:', data);
+      // Persist organization id for subsequent API calls
+      if (data && data.organization_id) {
+        try { localStorage.setItem('aura_org_id', data.organization_id); } catch {}
+      }
       successMessage = 'Registration successful! Redirecting to login...';
       // Redirect to login after a short delay
       setTimeout(() => {
@@ -47,14 +53,14 @@
 <div class="flex items-center justify-center min-h-screen px-4">
   <div class="w-full max-w-md p-8 space-y-6 bg-[#1A1A1A] rounded-xl shadow-lg border border-[#333333]">
     <div class="flex justify-center">
-      <div class="w-10 h-10 bg-[#7C3AED] rounded-full" />
+      <div class="w-10 h-10 bg-[#7C3AED] rounded-full"></div>
     </div>
     <h1 class="text-2xl font-bold text-center text-white">
       Create Your AURA Account
     </h1>
 
     {#if successMessage}
-      <p class="text-sm text-green-400 text-center">{successMessage}</p>
+      <Alert variant="success" className="text-center">{successMessage}</Alert>
     {/if}
 
     <form on:submit|preventDefault={handleRegister} class="space-y-6">
@@ -102,7 +108,7 @@
       </div>
 
       {#if errorMessage}
-        <p class="text-sm text-red-400">{errorMessage}</p>
+        <Alert variant="error">{errorMessage}</Alert>
       {/if}
 
       <div>

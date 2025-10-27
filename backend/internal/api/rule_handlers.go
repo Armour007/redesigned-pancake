@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json" // Import json package
+	"net"
 	"net/http"
 	"time"
 
@@ -75,6 +76,39 @@ func AddPermissionRule(c *gin.Context) {
 		CreatedAt: newPermission.CreatedAt,
 	}
 	c.JSON(http.StatusCreated, response)
+
+	// Audit log (fire and forget)
+	go func() {
+		ua := c.Request.UserAgent()
+		path := c.FullPath()
+		rid := c.GetString("requestID")
+		ridPtr, uaPtr, pathPtr := &rid, &ua, &path
+		status := 201
+		statusPtr := &status
+		details := map[string]any{"agent_id": agentId.String()}
+		event := database.EventLog{
+			OrganizationID: func() uuid.UUID { org, _ := uuid.Parse(c.Param("orgId")); return org }(),
+			AgentID:        &agentId,
+			Timestamp:      time.Now(),
+			EventType:      "RULE_CREATED",
+			Decision:       "SUCCESS",
+			RequestDetails: toJSON(details),
+			DecisionReason: nil,
+			ClientIPAddress: func() *net.IP {
+				ip := net.ParseIP(c.ClientIP())
+				if ip != nil {
+					return &ip
+				}
+				return nil
+			}(),
+			RequestID:  ridPtr,
+			UserAgent:  uaPtr,
+			Path:       pathPtr,
+			StatusCode: statusPtr,
+		}
+		_, _ = database.DB.NamedExec(`INSERT INTO event_logs (organization_id, agent_id, timestamp, event_type, decision, request_details, client_ip_address, request_id, user_agent, path, status_code)
+			VALUES (:organization_id, :agent_id, :timestamp, :event_type, :decision, :request_details, :client_ip_address, :request_id, :user_agent, :path, :status_code)`, event)
+	}()
 }
 
 // GetPermissionRules handles requests to list rules for an agent
@@ -182,4 +216,37 @@ func DeletePermissionRule(c *gin.Context) {
 
 	// Respond with success (No Content)
 	c.Status(http.StatusNoContent)
+
+	// Audit log (fire and forget)
+	go func() {
+		ua := c.Request.UserAgent()
+		path := c.FullPath()
+		rid := c.GetString("requestID")
+		ridPtr, uaPtr, pathPtr := &rid, &ua, &path
+		status := 204
+		statusPtr := &status
+		details := map[string]any{"agent_id": agentId.String(), "rule_id": ruleId.String()}
+		event := database.EventLog{
+			OrganizationID: func() uuid.UUID { org, _ := uuid.Parse(c.Param("orgId")); return org }(),
+			AgentID:        &agentId,
+			Timestamp:      time.Now(),
+			EventType:      "RULE_DELETED",
+			Decision:       "SUCCESS",
+			RequestDetails: toJSON(details),
+			DecisionReason: nil,
+			ClientIPAddress: func() *net.IP {
+				ip := net.ParseIP(c.ClientIP())
+				if ip != nil {
+					return &ip
+				}
+				return nil
+			}(),
+			RequestID:  ridPtr,
+			UserAgent:  uaPtr,
+			Path:       pathPtr,
+			StatusCode: statusPtr,
+		}
+		_, _ = database.DB.NamedExec(`INSERT INTO event_logs (organization_id, agent_id, timestamp, event_type, decision, request_details, client_ip_address, request_id, user_agent, path, status_code)
+			VALUES (:organization_id, :agent_id, :timestamp, :event_type, :decision, :request_details, :client_ip_address, :request_id, :user_agent, :path, :status_code)`, event)
+	}()
 }

@@ -2,7 +2,9 @@
 	import type { PageData } from './$types'; // SvelteKit type for load function data
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { API_BASE, authHeaders } from '$lib/api';
 	import Modal from '$lib/components/Modal.svelte'; // Import Modal component
+  import Alert from '$lib/components/Alert.svelte';
 
 	// Define the Agent type again here to match the data from +page.ts
 	// (Or import from a shared types file later: import type { Agent } from '$lib/types';)
@@ -55,11 +57,11 @@
 		}
 
 		try {
-			const response = await fetch(`http://localhost:8080/organizations/${organizationId}/agents`, {
+			const response = await fetch(`${API_BASE}/organizations/${organizationId}/agents`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					Authorization: `Bearer ${token}` // Send the token
+					...authHeaders(token) // Send the token
 				},
 				body: JSON.stringify({
 					name: newAgentName,
@@ -80,7 +82,7 @@
 			newAgentName = ''; // Reset form
 			newAgentDescription = '';
 			// Refresh the agent list (simplest way for now is a page reload)
-			// A better way involves invalidating load data: import { invalidate } from '$app/navigation'; invalidate(`http://localhost:8080/organizations/${organizationId}/agents`);
+			// A better way involves invalidating load data: import { invalidate } from '$app/navigation'; invalidate(`${API_BASE}/organizations/${organizationId}/agents`);
 			window.location.reload();
 		} catch (error: any) {
 			createErrorMessage = error.message || 'Failed to create agent. Please try again.';
@@ -103,9 +105,9 @@
 		</button>
 	</div>
 
-	{#if error}
-		<p class="text-red-400">Error loading agents: {error}</p>
-	{:else if agents && agents.length > 0}
+			{#if error}
+				<Alert variant="error">Error loading agents: {error}</Alert>
+		{:else if agents && agents.length > 0}
 		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 {#each agents as agent (agent.id)}
   <a href={`/agents/${agent.id}`} class="block group">
@@ -170,12 +172,12 @@
 				disabled={isCreating}
 				class="mt-1 block w-full p-3 bg-[#111111] text-white rounded-lg border border-[#333333] focus:ring-2 focus:ring-[#7C3AED] focus:border-transparent placeholder-gray-500 text-sm resize-none"
 				placeholder="What does this agent do?"
-			/>
+			></textarea>
 		</div>
 
-		{#if createErrorMessage}
-			<p class="text-sm text-red-400">{createErrorMessage}</p>
-		{/if}
+				{#if createErrorMessage}
+					<Alert variant="error">{createErrorMessage}</Alert>
+				{/if}
 
 		<div class="flex justify-end pt-2 space-x-3">
 			<button

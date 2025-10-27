@@ -59,6 +59,10 @@ type EventLog struct {
 	RequestDetails   json.RawMessage `db:"request_details"`
 	DecisionReason   *string         `db:"decision_reason"`   // Pointer for nullable
 	ClientIPAddress  *net.IP         `db:"client_ip_address"` // Pointer for nullable
+	RequestID        *string         `db:"request_id"`
+	UserAgent        *string         `db:"user_agent"`
+	Path             *string         `db:"path"`
+	StatusCode       *int            `db:"status_code"`
 }
 type APIKey struct {
 	ID              uuid.UUID  `db:"id"`
@@ -70,4 +74,14 @@ type APIKey struct {
 	LastUsedAt      *time.Time `db:"last_used_at"` // Pointer for nullable
 	ExpiresAt       *time.Time `db:"expires_at"`   // Pointer for nullable
 	CreatedAt       time.Time  `db:"created_at"`
+}
+
+// WebhookEndpoint represents webhook subscription for an organization
+type WebhookEndpoint struct {
+	ID             uuid.UUID `db:"id"`
+	OrganizationID uuid.UUID `db:"organization_id"`
+	URL            string    `db:"url"`
+	Secret         string    `db:"secret"`
+	IsActive       bool      `db:"is_active"`
+	CreatedAt      time.Time `db:"created_at"`
 }

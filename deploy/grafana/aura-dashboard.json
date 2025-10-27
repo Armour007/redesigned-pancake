@@ -1,0 +1,33 @@
+{
+  "annotations": {"list": []},
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "HTTP request duration (p50,p95,p99)",
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(aura_http_request_duration_seconds_bucket[5m])) by (le))"},
+        {"expr": "histogram_quantile(0.95, sum(rate(aura_http_request_duration_seconds_bucket[5m])) by (le))"},
+        {"expr": "histogram_quantile(0.99, sum(rate(aura_http_request_duration_seconds_bucket[5m])) by (le))"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "HTTP requests (rps)",
+      "targets": [
+        {"expr": "sum(rate(aura_http_requests_total[5m]))"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Verify decisions per outcome",
+      "targets": [
+        {"expr": "sum(rate(aura_verify_decisions_total{decision=\"ALLOWED\"}[5m]))"},
+        {"expr": "sum(rate(aura_verify_decisions_total{decision=\"DENIED\"}[5m]))"}
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "title": "AURA Overview",
+  "timezone": "browser",
+  "version": 1
+}

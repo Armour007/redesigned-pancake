@@ -1,6 +1,7 @@
 import type { Load } from '@sveltejs/kit';
 import { browser } from '$app/environment';
 import { error } from '@sveltejs/kit';
+import { API_BASE, authHeaders } from '$lib/api';
 
 // --- Type Definitions ---
 interface Agent {
@@ -28,10 +29,20 @@ interface ApiKeyInfo {
 	expires_at?: string | null;
 }
 
+interface EventLog {
+	id: number;
+	timestamp: string;
+	event_type: string;
+	decision?: string;
+	decision_reason?: string | null;
+	request_details: any;
+}
+
 export interface AgentDetailPageLoadData {
 	agent: Agent | null;
 	rules: Permission[];
 	apiKeys: ApiKeyInfo[];
+	logs: EventLog[];
 	agentId: string;
 	organizationId: string | null;
 	error?: string;
@@ -46,8 +57,7 @@ export const load: Load = async ({ params, fetch }) => {
 
 	if (browser) {
 		token = localStorage.getItem('aura_token');
-		// !!! CRITICAL: REPLACE THIS HARDCODED ORGANIZATION ID !!!
-		organizationId = '2bc40ca7-7830-4e3a-8f17-daf017247bb9'; // <<<--- REPLACE THIS !!!
+		organizationId = localStorage.getItem('aura_org_id');
 	}
 
 	if (!token || !organizationId) {
@@ -58,44 +68,41 @@ export const load: Load = async ({ params, fetch }) => {
 	let agent: Agent | null = null;
 	let rules: Permission[] = [];
 	let apiKeys: ApiKeyInfo[] = [];
+	let logs: EventLog[] = [];
 	let loadError: string | undefined = undefined;
 
 	try {
 		// --- Fetch data concurrently ---
 		const results = await Promise.all([
-			fetch(`http://localhost:8080/organizations/${organizationId}/agents/${agentId}`, {
-				headers: { Authorization: `Bearer ${token}` }
-			}),
-			fetch(`http://localhost:8080/organizations/${organizationId}/agents/${agentId}/permissions`, {
-				headers: { Authorization: `Bearer ${token}` }
-			}),
-			fetch(`http://localhost:8080/organizations/${organizationId}/apikeys`, {
-				headers: { Authorization: `Bearer ${token}` }
-			})
-		]);
+				fetch(`${API_BASE}/organizations/${organizationId}/agents/${agentId}`, {
+					headers: authHeaders(token)
+				}),
+				fetch(`${API_BASE}/organizations/${organizationId}/agents/${agentId}/permissions`, {
+					headers: authHeaders(token)
+				}),
+				fetch(`${API_BASE}/organizations/${organizationId}/apikeys`, {
+					headers: authHeaders(token)
+				}),
+				fetch(`${API_BASE}/organizations/${organizationId}/logs?agentId=${agentId}`, {
+					headers: authHeaders(token)
+				})
+			]);
 
 		const agentRes = results[0];
 		const rulesRes = results[1];
-		const keysRes = results[2];
+	const keysRes = results[2];
+	const logsRes = results[3];
 
-		// --- Process Agent Details (FIXED: Handle ARRAY response) ---
+		// --- Process Agent Details ---
 		if (!agentRes.ok) {
 			if (agentRes.status === 404) throw error(404, 'Agent not found');
 			const agentErrorData = await agentRes.json().catch(() => ({ error: 'Failed to parse agent error' }));
 			console.error(`Failed to fetch agent details: ${agentRes.status}`, agentErrorData);
 			loadError = agentErrorData.error || `Failed to load agent (status: ${agentRes.status})`;
 		} else {
-			const agentArray: Agent[] = await agentRes.json(); // Parse as an array
-			console.log("Parsed agent ARRAY from API:", agentArray); // Log the array
-			if (agentArray && agentArray.length > 0) {
-				 agent = agentArray[0]; // Take the FIRST element from the array
-				 console.log("Extracted single agent:", agent); // Log the extracted object
-			} else {
-				 console.error("Agent API returned OK but array was empty or invalid.");
-				 loadError = "Agent data received in unexpected format (empty array)."
-			}
+			agent = await agentRes.json();
 		}
-		// --- End Agent Processing Fix ---
+		// --- End Agent Processing ---
 
 		// --- Process Rules ---
 		if (!rulesRes.ok) {
@@ -111,6 +118,12 @@ export const load: Load = async ({ params, fetch }) => {
 			apiKeys = await keysRes.json();
 		}
 
+		if (!logsRes.ok) {
+			console.error(`Failed to fetch logs: ${logsRes.status}`);
+		} else {
+			logs = await logsRes.json();
+		}
+
 	} catch (err: any) {
 		console.error('Critical error loading agent detail page data:', err);
 		if (err.status) throw err;
@@ -121,7 +134,8 @@ export const load: Load = async ({ params, fetch }) => {
 	return {
 		agent, // This should now be the single agent object or null
 		rules,
-		apiKeys,
+	apiKeys,
+	logs,
 		agentId,
 		organizationId,
 		error: loadError

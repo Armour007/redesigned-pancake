@@ -32,6 +32,11 @@ func RegisterUser(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
 		return
 	}
+	// Password policy enforcement
+	if ok, why := utils.ValidatePasswordPolicy(req.Password, req.Email, req.FullName); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": why})
+		return
+	}
 
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {

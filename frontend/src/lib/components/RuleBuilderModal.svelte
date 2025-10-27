@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { createEventDispatcher, onMount } from 'svelte';
-	import Modal from '$lib/components/Modal.svelte'; // Assuming Modal.svelte is in components
+	import Modal from '$lib/components/Modal.svelte';
 	import { agentContext } from '$lib/stores/agentContext'; // <-- Import the store
+	import { API_BASE, authHeaders } from '$lib/api';
+  import Alert from '$lib/components/Alert.svelte';
 
-	// --- REMOVED agentId and organizationId props ---
+	// --- Props ---
 	export let showModal: boolean = false;
 	export let title: string = 'Modal Title';
 
@@ -12,32 +14,18 @@
 	// --- Form State Variables ---
 	let ruleType: 'template' | 'custom' = 'template';
 	let effect: 'allow' | 'deny' = 'allow';
-	let action = ''; // Initialize action state
+	let action = '';
 	let conditions: Array<{ key: string; operator: string; value: string }> = [];
+	// Time window template inputs
+	let timeWindowEnabled = false;
+	let timeWindowDays: Record<string, boolean> = { Mon: false, Tue: false, Wed: false, Thu: false, Fri: false, Sat: false, Sun: false };
+	let timeWindowStart = ''; // "09:00"
+	let timeWindowEnd = '';
+	let timeWindowTz = 'Asia/Kolkata';
 	let customJson = '';
 	let jsonPreview = '{}'; // Start with empty object
 	let errorMessage = '';
-	let isLoading = false; // For API call later
-
-	// --- onMount ---
-	// Resets form state when the component mounts
-	onMount(() => {
-		resetFormState();
-		console.log('RuleBuilderModal mounted, form state reset.');
-	});
-
-	// --- Reactive block for Rule Type Change ---
-	$: {
-		// This runs whenever ruleType changes
-		if (ruleType === 'template') {
-			customJson = '';
-			// console.log('Switched to template mode, cleared custom JSON.');
-		} else if (ruleType === 'custom') {
-			resetGuidedFields();
-			// console.log('Switched to custom mode, cleared guided fields.');
-		}
-		errorMessage = ''; // Reset error on switch
-	}
+	let isLoading = false;
 
 	// --- Constants ---
 	const operators = [
@@ -62,6 +50,11 @@
 		effect = 'allow';
 		action = '';
 		conditions = [];
+		timeWindowEnabled = false;
+		timeWindowDays = { Mon: false, Tue: false, Wed: false, Thu: false, Fri: false, Sat: false, Sun: false };
+		timeWindowStart = '';
+		timeWindowEnd = '';
+		timeWindowTz = 'Asia/Kolkata';
 	}
 
 	function resetFormState() {
@@ -73,18 +66,46 @@
 		isLoading = false;
 	}
 
+	// --- onMount ---
+	// Resets form state when the component mounts
+	onMount(() => {
+		resetFormState();
+		// console.log('RuleBuilderModal mounted, form state reset.');
+	});
+
+	// --- Reactive block for Rule Type Change ---
+	$: {
+		// This runs whenever ruleType changes
+		if (ruleType === 'template') {
+			customJson = '';
+			// console.log('Switched to template mode, cleared custom JSON.');
+		} else if (ruleType === 'custom') {
+			resetGuidedFields();
+			// console.log('Switched to custom mode, cleared guided fields.');
+		}
+		errorMessage = ''; // Reset error on switch
+	}
+
 	// --- Reactive statement to generate JSON preview ---
 	$: {
 		// This block runs whenever its dependencies (ruleType, customJson, effect, action, conditions) change
-		errorMessage = ''; // **FIX: Reset error message at the start of EVERY recalculation**
+		
+		// **FIX**: We only clear JSON-parsing errors here.
+		// Action-related errors will be set below or in handleSave.
+		if (errorMessage !== 'Action field is required.') {
+			errorMessage = '';
+		}
+
 		try {
 			if (ruleType === 'custom') {
 				// Handle Custom JSON Input
 				if (!customJson || customJson.trim() === '') {
 					jsonPreview = '{}';
+					errorMessage = ''; // Clear error if empty
 				} else {
 					const parsed = JSON.parse(customJson);
 					jsonPreview = JSON.stringify(parsed, null, 2);
+					errorMessage = ''; // Clear error if JSON is valid
 				}
 			} else {
 				// Generate JSON from Guided Builder
@@ -94,8 +115,9 @@
 				const trimmedAction = action.trim();
 				if (trimmedAction) {
 					ruleObject.action = trimmedAction;
+					errorMessage = ''; // **FIX: Clear error if action is now filled**
 				} else {
-					// Set error if action is empty, as it's required
+					// We need an action for a valid rule
 					errorMessage = 'Action field is required.';
 				}
 
@@ -113,6 +135,19 @@
 							return { [cond.key.trim()]: { [operator]: cond.value.trim() } };
 						});
 					}
+				}
+
+				// Process time window
+				if (timeWindowEnabled) {
+					const selectedDays = Object.entries(timeWindowDays)
+						.filter(([_, v]) => v)
+						.map(([k]) => k);
+					const tw: any = {};
+					if (selectedDays.length > 0) tw.days = selectedDays;
+					if (timeWindowStart) tw.start = timeWindowStart;
+					if (timeWindowEnd) tw.end = timeWindowEnd;
+					if (timeWindowTz) tw.tz = timeWindowTz;
+					if (Object.keys(tw).length > 0) ruleObject.time_window = tw;
 				}
 				// Generate Final Preview
 				jsonPreview = JSON.stringify(ruleObject, null, 2);
@@ -134,24 +169,35 @@
 
 	// --- API Call Logic (Using Store) ---
 	async function handleSave() {
-		const currentAgentContext = $agentContext;
+		// --- Get IDs DIRECTLY from the store ---
+		const currentAgentContext = $agentContext; // Get current value from store
 		const agentIdFromStore = currentAgentContext.agentId;
 		const orgIdFromStore = currentAgentContext.organizationId;
 
-		// Validation
+		// Validation (Use store values)
 		if (!agentIdFromStore || !orgIdFromStore) {
 			errorMessage = 'Agent or Organization ID context is missing. Cannot save.';
 			console.error('Missing IDs from store in handleSave:', { agentIdFromStore, orgIdFromStore });
+			return; // Stop if IDs are missing from store
+		}
+
+		// **FIX: Re-validate action and JSON at the moment of saving**
+		let ruleToSend: any;
+		try {
+			ruleToSend = JSON.parse(jsonPreview);
+		} catch (e) {
+			errorMessage = 'Cannot save invalid JSON rule.';
 			return;
 		}
 
-		isLoading = true;
-		// Re-check error message *at the moment of saving*
-		if (errorMessage) {
-			isLoading = false;
-			return; // Don't proceed if there's a known error
+		if (!ruleToSend || !ruleToSend.action) {
+			errorMessage = 'Rule must include a valid "action". Check inputs.';
+			return;
 		}
+		// --- End Validation ---
 
+		isLoading = true;
+		errorMessage = ''; // Clear errors before trying API call
 		const token = localStorage.getItem('aura_token');
 		if (!token) {
 			errorMessage = 'Authentication token missing. Please log in again.';
@@ -159,30 +205,15 @@
 			return;
 		}
 
-		let ruleToSend: any;
-		try {
-			ruleToSend = JSON.parse(jsonPreview);
-		} catch (e) {
-			errorMessage = 'Cannot save invalid JSON rule.';
-			isLoading = false;
-			return;
-		}
-
-		if (!ruleToSend || !ruleToSend.action) {
-			errorMessage = 'Rule must include a valid "action". Check inputs.';
-			isLoading = false;
-			return;
-		}
-
 		// --- API Call ---
 		try {
 			const response = await fetch(
-				`http://localhost:8080/organizations/${orgIdFromStore}/agents/${agentIdFromStore}/permissions`,
+				`${API_BASE}/organizations/${orgIdFromStore}/agents/${agentIdFromStore}/permissions`,
 				{
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json',
-						Authorization: `Bearer ${token}`
+						...authHeaders(token)
 					},
 					body: JSON.stringify({ rule: ruleToSend })
 				}
@@ -212,7 +243,7 @@
 <Modal {title} bind:showModal on:close={closeModal}>
 	<form on:submit|preventDefault={handleSave} class="space-y-4">
 		<div class="space-y-1">
-			<label class="block text-sm font-medium text-gray-300">Rule Type</label>
+			<p class="block text-sm font-medium text-gray-300">Rule Type</p>
 			<div class="flex rounded-lg bg-gray-800 p-1">
 				<label class="w-full">
 					<input bind:group={ruleType} type="radio" value="template" class="sr-only peer" checked />
@@ -236,7 +267,7 @@
 		{#if ruleType === 'template'}
 			<div class="space-y-4 border border-gray-700 p-4 rounded-lg bg-gray-800/30">
 				<div class="space-y-1">
-					<label class="block text-sm font-medium text-gray-300">Effect</label>
+					<p class="block text-sm font-medium text-gray-300">Effect</p>
 					<div class="flex rounded-lg bg-gray-700 p-1 w-full">
 						<label class="w-1/2">
 							<input bind:group={effect} type="radio" value="allow" class="sr-only peer" checked />
@@ -270,9 +301,9 @@
 				</div>
 
 				<div>
-					<label class="block text-sm font-medium text-gray-300 mb-2"
-						>Conditions (Optional, all must be true)</label
-					>
+					<p class="block text-sm font-medium text-gray-300 mb-2">
+						Conditions (Optional, all must be true)
+					</p>
 					{#each conditions as condition, i (i)}
 						<div class="flex items-center gap-2 mb-2 p-2 bg-gray-700/50 rounded">
 							<input
@@ -300,8 +331,9 @@
 								on:click={() => removeCondition(i)}
 								class="text-red-400 hover:text-red-300 p-1"
 								title="Remove condition"
+								aria-label="Remove condition"
 							>
-								<span class="material-symbols-outlined text-base leading-none">delete</span>
+								<span class="material-symbols-outlined text-base leading-none" aria-hidden="true">delete</span>
 							</button>
 						</div>
 					{/each}
@@ -312,6 +344,43 @@
 					>
 						<span class="material-symbols-outlined text-sm">add_circle</span> Add Condition
 					</button>
+				</div>
+
+				<!-- Time Window Section -->
+				<div class="mt-4 space-y-3 border-t border-gray-700 pt-4">
+					<label class="inline-flex items-center gap-2 text-sm text-gray-300">
+						<input type="checkbox" bind:checked={timeWindowEnabled} />
+						<span>Restrict by Time Window</span>
+					</label>
+					{#if timeWindowEnabled}
+						<div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+							<div class="col-span-2 space-y-2">
+								<p class="text-xs text-gray-400">Days of the week</p>
+								<div class="flex flex-wrap gap-2">
+									{#each Object.keys(timeWindowDays) as d}
+										<label class="inline-flex items-center gap-1 text-xs bg-gray-700/60 px-2 py-1 rounded">
+											<input type="checkbox" bind:checked={timeWindowDays[d]} />
+											<span>{d}</span>
+										</label>
+									{/each}
+								</div>
+							</div>
+							<div class="space-y-2">
+								<label class="block text-xs text-gray-300" for="twTz">Timezone</label>
+								<input id="twTz" class="w-full p-1.5 bg-[#111111] text-white rounded border border-[#333333] text-xs" bind:value={timeWindowTz} placeholder="Asia/Kolkata" />
+							</div>
+						</div>
+						<div class="grid grid-cols-2 gap-3">
+							<div>
+								<label class="block text-xs text-gray-300" for="twStart">Start</label>
+								<input id="twStart" type="time" class="w-full p-1.5 bg-[#111111] text-white rounded border border-[#333333] text-xs" bind:value={timeWindowStart} />
+							</div>
+							<div>
+								<label class="block text-xs text-gray-300" for="twEnd">End</label>
+								<input id="twEnd" type="time" class="w-full p-1.5 bg-[#111111] text-white rounded border border-[#333333] text-xs" bind:value={timeWindowEnd} />
+							</div>
+						</div>
+					{/if}
 				</div>
 			</div>
 		{/if}
@@ -333,7 +402,7 @@
 		{/if}
 
 		<div class="space-y-1">
-			<label class="block text-xs font-medium text-gray-400">Live JSON Preview</label>
+			<p class="block text-xs font-medium text-gray-400">Live JSON Preview</p>
 			<pre
 				class="w-full p-3 bg-gray-800 text-gray-300 rounded-lg border font-mono text-xs overflow-x-auto whitespace-pre-wrap {errorMessage &&
 				(ruleType === 'custom' || errorMessage.includes('Action'))
@@ -343,7 +412,7 @@
 		</div>
 
 		{#if errorMessage}
-			<p class="text-sm text-red-400">{errorMessage}</p>
+			<Alert variant="error">{errorMessage}</Alert>
 		{/if}
 
 		<div class="flex justify-end pt-2 space-x-3">

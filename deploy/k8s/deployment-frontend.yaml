@@ -1,0 +1,36 @@
+# NOTE: The frontend image is built with PUBLIC_API_BASE baked in during CI.
+# Ensure your CI sets PUBLIC_API_BASE to the backend external URL (e.g., https://api.example.com).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aura-frontend
+  namespace: aura
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aura-frontend
+  template:
+    metadata:
+      labels:
+        app: aura-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/Armour007/aura-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aura-frontend
+  namespace: aura
+spec:
+  selector:
+    app: aura-frontend
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP

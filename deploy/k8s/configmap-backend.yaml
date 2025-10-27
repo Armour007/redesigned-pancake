@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aura-backend-config
+  namespace: aura
+data:
+  DB_HOST: aura-postgres
+  DB_PORT: "5432"
+  DB_USER: aura_user
+  DB_NAME: aura_db
+  DB_SSLMODE: disable
+  AURA_V1_VERIFY_RPM: "600"
+  # Comma-separated list of allowed origins, set to your frontend host(s)
+  AURA_CORS_ORIGINS: http://app.example.com
+  AURA_TRUSTED_PROXIES: ""
+  # Optional Redis for distributed rate limiting
+  AURA_REDIS_ADDR: aura-redis:6379

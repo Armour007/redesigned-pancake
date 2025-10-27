@@ -1,0 +1,111 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aura_db
+      POSTGRES_USER: aura_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+  backend:
+    image: ghcr.io/Armour007/aura-backend:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: aura_user
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+      DB_NAME: aura_db
+      DB_SSLMODE: disable
+      JWT_SECRET: ${JWT_SECRET:-please_change}
+      # Rate limiting (requests per minute) for /v1/verify
+      AURA_V1_VERIFY_RPM: ${AURA_V1_VERIFY_RPM:-600}
+      # CORS allowed origins (comma-separated)
+      AURA_CORS_ORIGINS: ${AURA_CORS_ORIGINS:-http://localhost:3000}
+      # Trusted proxies (comma-separated)
+      AURA_TRUSTED_PROXIES: ${AURA_TRUSTED_PROXIES:-}
+      # Optional Redis for distributed rate limiting
+      AURA_REDIS_ADDR: redis:6379
+      # OpenTelemetry tracing (optional)
+      AURA_OTEL_ENABLE: ${AURA_OTEL_ENABLE:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+      OTEL_SERVICE_NAME: aura-backend
+      # Metrics labeling (be careful with cardinality)
+      AURA_METRICS_LABELS_ORG: ${AURA_METRICS_LABELS_ORG:-false}
+    ports:
+      - "8080:8080"
+
+  # IMPORTANT: The frontend image is built in CI with PUBLIC_API_BASE baked in.
+  # Set GitHub Actions repo/organization VARS PUBLIC_API_BASE to your backend URL,
+  # e.g. https://api.example.com or http://backend:8080 for same-network use.
+  frontend:
+    image: ghcr.io/Armour007/aura-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+  # Prometheus to scrape backend metrics
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - backend
+
+  # OpenTelemetry Collector for tracing
+  otel-collector:
+    image: otel/opentelemetry-collector:0.102.1
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deploy/otelcol/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4318:4318" # OTLP HTTP receiver
+
+  # Grafana Tempo for tracing backend
+  tempo:
+    image: grafana/tempo:2.5.0
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./deploy/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+    ports:
+      - "3200:3200" # Tempo HTTP (query)
+      - "4319:4318" # Optional: expose internal OTLP http externally (not required)
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:11.2.2
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./deploy/grafana/aura-dashboard.json:/var/lib/grafana/dashboards/aura-dashboard.json:ro
+      - ./deploy/grafana/provisioning/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./deploy/grafana/provisioning/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+    depends_on:
+      - prometheus
+      - tempo
+
+volumes:
+  db_data: {}

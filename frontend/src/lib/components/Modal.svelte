@@ -33,9 +33,11 @@
   <div
     class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 transition-opacity duration-300"
     on:click={handleBackdropClick}
+    on:keydown={handleKeydown}
     role="dialog"
     aria-modal="true"
     aria-labelledby="modal-title"
+    tabindex="0"
     transition:fade={{ duration: 150 }}
   >
     <div

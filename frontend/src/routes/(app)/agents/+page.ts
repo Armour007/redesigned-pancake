@@ -1,5 +1,6 @@
 import type { Load } from '@sveltejs/kit';
 import { browser } from '$app/environment'; // To check if running in browser
+import { API_BASE, authHeaders } from '$lib/api';
 
 // Define the shape of an Agent based on your backend response
 interface Agent {
@@ -16,13 +17,11 @@ export const load: Load = async ({ fetch }) => {
 	// to get the user's token and their associated organization ID.
 	// We'll read the token from localStorage (only works in browser) for MVP.
 	let token: string | null = null;
-    let organizationId: string | null = null; // Replace with a real Org ID
+	let organizationId: string | null = null;
 
 	if (browser) { // localStorage only exists in the browser
-		token = localStorage.getItem('aura_token');
-        // You MUST replace this hardcoded Org ID with the one you get
-        // after user registration/login in a real application.
-        organizationId = '2bc40ca7-7830-4e3a-8f17-daf017247bb9'; // <<<--- REPLACE THIS !!!
+	token = localStorage.getItem('aura_token');
+	organizationId = localStorage.getItem('aura_org_id');
 	}
 
 	if (!token || !organizationId) {
@@ -37,10 +36,10 @@ export const load: Load = async ({ fetch }) => {
 	}
 
 	try {
-		const response = await fetch(`http://localhost:8080/organizations/${organizationId}/agents`, {
+	    const response = await fetch(`${API_BASE}/organizations/${organizationId}/agents`, {
 			method: 'GET',
 			headers: {
-				'Authorization': `Bearer ${token}`, // Send the token
+					...authHeaders(token), // Send the token
 			},
 		});
 
