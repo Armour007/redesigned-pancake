@@ -29,6 +29,8 @@ spec:
             # Toggle interactive chart in Try It (client). Set to "1" or "true" to enable.
             - name: PUBLIC_TRYIT_CHARTS
               value: ""
+            - name: PUBLIC_SITE_URL
+              value: ""
 ---
 apiVersion: v1
 kind: Service

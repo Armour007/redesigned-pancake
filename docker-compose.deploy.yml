@@ -60,6 +60,8 @@ services:
       AURA_DEMO_WEBHOOK_URL: ${AURA_DEMO_WEBHOOK_URL:-}
       # Toggle interactive chart in Try It (client)
       PUBLIC_TRYIT_CHARTS: ${PUBLIC_TRYIT_CHARTS:-}
+      # Absolute site origin used for sitemap.xml and robots.txt (e.g., https://aura.example.com)
+      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-}
     ports:
       - "3000:3000"
 
