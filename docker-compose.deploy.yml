@@ -54,6 +54,10 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+    environment:
+      # Optional: set to a HTTPS endpoint that receives demo leads from the marketing site
+      # e.g. https://hooks.zapier.com/hooks/catch/... or your CRM ingest URL
+      AURA_DEMO_WEBHOOK_URL: ${AURA_DEMO_WEBHOOK_URL:-}
     ports:
       - "3000:3000"
 
