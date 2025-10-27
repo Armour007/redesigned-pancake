@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -76,14 +77,28 @@ func CreateAPIKey(c *gin.Context) {
 		return
 	}
 
-	// Respond with secret ONCE
+	// Build a convenience Quick Start link to help first-time users.
+	// Prefer AURA_FRONTEND_BASE_URL, fallback to PUBLIC_SITE_URL, else localhost dev URL.
+	frontendBase := strings.TrimRight(func() string {
+		if v := os.Getenv("AURA_FRONTEND_BASE_URL"); v != "" {
+			return v
+		}
+		if v := os.Getenv("PUBLIC_SITE_URL"); v != "" {
+			return v
+		}
+		return "http://localhost:5173"
+	}(), "/")
+	quickstartURL := frontendBase + "/quickstart?key_prefix=" + keyPrefix
+
+	// Respond with secret ONCE plus helper URL
 	c.JSON(http.StatusCreated, NewAPIKeyResponse{
-		ID:        key.ID,
-		Name:      key.Name,
-		KeyPrefix: key.KeyPrefix,
-		SecretKey: secret,
-		CreatedAt: key.CreatedAt,
-		ExpiresAt: key.ExpiresAt,
+		ID:            key.ID,
+		Name:          key.Name,
+		KeyPrefix:     key.KeyPrefix,
+		SecretKey:     secret,
+		CreatedAt:     key.CreatedAt,
+		ExpiresAt:     key.ExpiresAt,
+		QuickStartURL: quickstartURL,
 	})
 
 	// Audit log (fire and forget)

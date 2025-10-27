@@ -18,7 +18,17 @@ import (
 
 func main() {
 	database.Connect()
-	log.Println("Starting AURA backend server on :8080...")
+
+	// Determine listen port from environment (PORT or AURA_PORT), default to 8080
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = os.Getenv("AURA_PORT")
+	}
+	if port == "" {
+		// Use 8081 as the local default to avoid common collisions with other dev services
+		port = "8081"
+	}
+	log.Println("Starting AURA backend server on :" + port + "...")
 	router := gin.Default()
 	// OpenTelemetry tracing (optional)
 	if shutdown, ok := api.SetupOTelFromEnv(); ok {
@@ -103,6 +113,8 @@ func main() {
 	router.GET("/openapi.json", api.OpenAPIJSON)
 	router.GET("/docs", api.SwaggerUI)
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	// Tiny redirect to frontend Quick Start for first-time onboarding
+	router.GET("/quickstart", api.QuickstartRedirect)
 
 	protectedRoutes := router.Group("/")
 	protectedRoutes.Use(api.AuthMiddleware()) // Apply the middleware HERE
@@ -163,7 +175,7 @@ func main() {
 		// Add other protected routes here if needed (e.g., /user/profile)
 	}
 
-	err := router.Run(":8080")
+	err := router.Run(":" + port)
 	if err != nil {
 		log.Fatal("Failed to start server:", err)
 	}

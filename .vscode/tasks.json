@@ -1,0 +1,67 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "DB: up (local)",
+      "type": "shell",
+      "command": "docker compose -f docker-compose.yml up -d db",
+      "problemMatcher": []
+    },
+    {
+      "label": "DB: down (local)",
+      "type": "shell",
+      "command": "docker compose -f docker-compose.yml down",
+      "problemMatcher": []
+    },
+    {
+      "label": "Backend: go run :8081",
+      "type": "shell",
+      "command": "go run ./cmd/server",
+      "options": {
+        "cwd": "${workspaceFolder}/backend",
+        "env": {
+          "PORT": "8081"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Frontend: npm run dev",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Dev: Start All (local)",
+      "dependsOn": [
+        "DB: up (local)",
+        "Backend: go run :8081",
+        "Frontend: npm run dev"
+      ],
+      "dependsOrder": "parallel"
+    },
+    {
+      "label": "Dev: Compose up (dev)",
+      "type": "shell",
+      "command": "docker compose -f docker-compose.dev.yml up --build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Dev: Compose down (dev)",
+      "type": "shell",
+      "command": "docker compose -f docker-compose.dev.yml down -v",
+      "problemMatcher": []
+    },
+    {
+      "label": "Backend: smoke test",
+      "type": "shell",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/backend-smoke.ps1",
+      "problemMatcher": []
+    }
+  ]
+}

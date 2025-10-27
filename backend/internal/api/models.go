@@ -81,6 +81,9 @@ type NewAPIKeyResponse struct {
 	SecretKey string     `json:"secret_key"` // The actual key, shown once
 	CreatedAt time.Time  `json:"created_at"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	// Optional helper URL to guide users to the Quick Start page in the frontend.
+	// This is a convenience link; clients are free to ignore it.
+	QuickStartURL string `json:"quickstart_url,omitempty"`
 }
 
 // NewAPIKeyRequest defines payload to create an API key

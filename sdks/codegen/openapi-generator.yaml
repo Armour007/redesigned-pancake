@@ -1,0 +1,42 @@
+inputSpec: ../../backend/static/openapi.json
+additionalProperties:
+  packageVersion: 0.1.0
+  hideGenerationTimestamp: true
+  enumPropertyNaming: original
+languages:
+  java:
+    generatorName: java
+    outputDir: ../java
+    additionalProperties:
+      library: okhttp-gson
+      artifactId: aura-java
+      dateLibrary: java8
+  csharp:
+    generatorName: csharp
+    outputDir: ../csharp
+    additionalProperties:
+      packageName: Aura
+      targetFramework: net8.0
+  ruby:
+    generatorName: ruby
+    outputDir: ../ruby
+  php:
+    generatorName: php
+    outputDir: ../php
+  rust:
+    generatorName: rust
+    outputDir: ../rust
+  swift:
+    generatorName: swift5
+    outputDir: ../swift
+  kotlin:
+    generatorName: kotlin
+    outputDir: ../kotlin
+    additionalProperties:
+      library: jvm-okhttp4
+  dart:
+    generatorName: dart-dio
+    outputDir: ../dart
+  cpp:
+    generatorName: cpp-httplib
+    outputDir: ../cpp
