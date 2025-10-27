@@ -1,0 +1,18 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='630' viewBox='0 0 1200 630'>
+  <defs>
+    <linearGradient id='g1' x1='0' y1='0' x2='1' y2='1'>
+      <stop offset='0%' stop-color='#1e1b4b'/>
+      <stop offset='50%' stop-color='#312e81'/>
+      <stop offset='100%' stop-color='#0f172a'/>
+    </linearGradient>
+  </defs>
+  <rect width='1200' height='630' fill='url(#g1)'/>
+  <g filter='url(#f1)'>
+    <circle cx='100' cy='80' r='220' fill='#22d3ee' opacity='0.15'/>
+    <circle cx='1100' cy='560' r='260' fill='#a855f7' opacity='0.15'/>
+    <circle cx='900' cy='100' r='180' fill='#22c55e' opacity='0.12'/>
+  </g>
+  <text x='80' y='360' fill='white' font-family='Inter, ui-sans-serif, system-ui' font-size='84' font-weight='700'>AURA</text>
+  <text x='80' y='430' fill='#c7d2fe' font-family='Inter, ui-sans-serif, system-ui' font-size='36'>API‑first trust decisions</text>
+  <text x='80' y='480' fill='#a5b4fc' font-family='Inter, ui-sans-serif, system-ui' font-size='24'>Built like Stripe • SDKs • Webhooks • Observability</text>
+</svg>

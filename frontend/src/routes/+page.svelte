@@ -5,6 +5,10 @@
   import CodeTabs from '$lib/components/marketing/CodeTabs.svelte';
   import LogosMarquee from '$lib/components/marketing/LogosMarquee.svelte';
   import CTASection from '$lib/components/marketing/CTASection.svelte';
+  import TryIt from '$lib/components/marketing/TryIt.svelte';
+  import Pricing from '$lib/components/marketing/Pricing.svelte';
+  import Comparison from '$lib/components/marketing/Comparison.svelte';
+  import DemoForm from '$lib/components/marketing/DemoForm.svelte';
 </script>
 
 <Hero />
@@ -16,4 +20,8 @@
   <HowItWorks />
 </div>
 <CodeTabs />
+<TryIt />
+<Pricing />
+<Comparison />
 <CTASection />
+<DemoForm />
