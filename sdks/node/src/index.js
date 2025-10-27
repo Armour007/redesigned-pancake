@@ -1,7 +1,7 @@
 /**
  * AURA Node.js SDK
  */
-const DEFAULT_BASE = process.env.AURA_API_BASE || 'http://localhost:8080';
+const DEFAULT_BASE = process.env.AURA_API_BASE || 'http://localhost:8081';
 
 export class AuraClient {
   /**
