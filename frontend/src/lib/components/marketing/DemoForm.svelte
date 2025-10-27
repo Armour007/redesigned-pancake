@@ -49,7 +49,7 @@
       </label>
       <label class="block text-sm">
         <span class="text-indigo-200">Message</span>
-        <textarea class="mt-1 w-full rounded-md bg-black/50 text-white p-2 ring-1 ring-white/10 focus:ring-indigo-500/50" rows="4" bind:value={message} placeholder="What are you building?" />
+        <textarea class="mt-1 w-full rounded-md bg-black/50 text-white p-2 ring-1 ring-white/10 focus:ring-indigo-500/50" rows="4" bind:value={message} placeholder="What are you building?"></textarea>
       </label>
       <button class="inline-flex items-center rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white px-4 py-2 text-sm">Request demo</button>
     </form>

@@ -9,6 +9,8 @@
   import Pricing from '$lib/components/marketing/Pricing.svelte';
   import Comparison from '$lib/components/marketing/Comparison.svelte';
   import DemoForm from '$lib/components/marketing/DemoForm.svelte';
+  import Counters from '$lib/components/marketing/Counters.svelte';
+  import Testimonials from '$lib/components/marketing/Testimonials.svelte';
 </script>
 
 <Hero />
@@ -16,12 +18,14 @@
   <FeatureGrid />
 </div>
 <LogosMarquee />
+<Counters />
 <div id="how">
   <HowItWorks />
 </div>
 <CodeTabs />
 <TryIt />
 <Pricing />
+<Testimonials />
 <Comparison />
 <CTASection />
 <DemoForm />

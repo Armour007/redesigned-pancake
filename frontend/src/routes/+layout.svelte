@@ -27,7 +27,9 @@
       <nav class="hidden sm:flex items-center gap-6 text-sm text-indigo-200">
         <a class="hover:text-white" href="#features">Product</a>
         <a class="hover:text-white" href="/docs">Docs</a>
+        <a class="hover:text-white" href="/blog">Blog</a>
         <a class="hover:text-white" href="/changelog">Changelog</a>
+        <a class="hover:text-white" href="/contact">Contact</a>
         <a class="hover:text-white" href="https://github.com/Armour007/aura" target="_blank" rel="noopener noreferrer">GitHub</a>
         <a class="ml-2 inline-flex items-center rounded-md bg-white/10 hover:bg-white/20 ring-1 ring-white/20 px-3 py-1.5 text-white" href="/login">Sign in</a>
         <a class="inline-flex items-center rounded-md bg-indigo-500 hover:bg-indigo-400 text-white px-3 py-1.5" href="/register">Get started</a>
@@ -55,7 +57,9 @@
           <li><a class="hover:text-white" href="#features">Features</a></li>
           <li><a class="hover:text-white" href="#how">How it works</a></li>
           <li><a class="hover:text-white" href="/docs">Docs</a></li>
+          <li><a class="hover:text-white" href="/blog">Blog</a></li>
           <li><a class="hover:text-white" href="/changelog">Changelog</a></li>
+          <li><a class="hover:text-white" href="/contact">Contact</a></li>
         </ul>
       </div>
       <div>

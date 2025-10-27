@@ -115,7 +115,22 @@ $env:AURA_OTEL_ENABLE='true'
 docker compose -f docker-compose.deploy.yml up -d
 ```
 
-## 9) Support
+## 9) Marketing configuration
+
+- Demo form → webhook/CRM
+  - Frontend endpoint `/api/lead` forwards to `$AURA_DEMO_WEBHOOK_URL` if set (server env). Example:
+  ```powershell
+  $env:AURA_DEMO_WEBHOOK_URL = 'https://hooks.zapier.com/hooks/catch/xxxx/yyyy'
+  npm run build; npm run preview
+  ```
+- Logos marquee
+  - Replace files under `frontend/static/logos/*.svg` with your approved monochrome logos.
+  - Update alt text in `src/lib/marketing/logos.ts`.
+- Open Graph image
+  - We generate `static/og-image.png` from `static/og-image.svg` at build time using `sharp`.
+  - To update: edit `static/og-image.svg`, then run `npm run build`.
+
+## 10) Support
 - OpenAPI docs: /docs and /openapi.json
 - Example SDKs under sdks/node, sdks/python, sdks/go/aura
 - Reach out to your AURA support contact for enterprise integration help.
