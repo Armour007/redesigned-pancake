@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: Run with Frontend URL",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/backend/cmd/server",
+      "cwd": "${workspaceFolder}/backend",
+      "env": {
+        "PORT": "8081",
+        "AURA_FRONTEND_BASE_URL": "http://localhost:5174"
+      }
+    }
+  ]
+}
