@@ -1,6 +1,5 @@
 <script lang="ts">
-  import type { CaseStudy } from '$lib/customers/caseStudies';
-  export let data: { caseStudies: Array<CaseStudy | { slug: string; name: string; logo: string; headline: string; summary: string }> };
+  export let data: { caseStudies: Array<{ slug: string; name: string; logo: string; headline: string; summary: string }> };
 </script>
 
 <section class="bg-slate-950 min-h-screen">

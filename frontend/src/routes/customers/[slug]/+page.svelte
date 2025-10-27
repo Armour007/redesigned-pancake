@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { caseStudies } from '$lib/customers/caseStudies';
-  export let data: { cs: ((typeof caseStudies)[number] & { component?: any }) | null };
+  export let data: { cs: ({ slug: string; name: string; logo: string; headline: string; summary: string; bodyHtml?: string; component?: any } | null) };
 </script>
 
 <section class="bg-slate-950 min-h-screen">

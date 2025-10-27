@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { posts } from '$lib/blog/posts';
-  export let data: { post: ((typeof posts)[number] & { component?: any }) | null };
+  export let data: { post: ({ slug: string; title: string; date: string; html?: string; component?: any }) | null };
 </script>
 
 <section class="bg-slate-950 min-h-screen">

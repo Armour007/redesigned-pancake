@@ -58,6 +58,8 @@ services:
       # Optional: set to a HTTPS endpoint that receives demo leads from the marketing site
       # e.g. https://hooks.zapier.com/hooks/catch/... or your CRM ingest URL
       AURA_DEMO_WEBHOOK_URL: ${AURA_DEMO_WEBHOOK_URL:-}
+      # Toggle interactive chart in Try It (client)
+      PUBLIC_TRYIT_CHARTS: ${PUBLIC_TRYIT_CHARTS:-}
     ports:
       - "3000:3000"
 

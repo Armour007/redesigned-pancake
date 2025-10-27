@@ -26,6 +26,9 @@ spec:
             # Prefer setting this via a Secret in production and reference it here.
             - name: AURA_DEMO_WEBHOOK_URL
               value: ""
+            # Toggle interactive chart in Try It (client). Set to "1" or "true" to enable.
+            - name: PUBLIC_TRYIT_CHARTS
+              value: ""
 ---
 apiVersion: v1
 kind: Service
