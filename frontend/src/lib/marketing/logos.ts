@@ -2,6 +2,7 @@
 // Best practice: use concise, accessible alt text like "Acme logo" or just the brand name.
 export type Logo = { src: string; alt: string };
 export const logos: Logo[] = [
+  { src: '/logos/aura.svg', alt: 'AURA logo' },
   { src: '/logos/logo1.svg', alt: 'Acme Corporation logo' },
   { src: '/logos/logo2.svg', alt: 'Globex Corporation logo' },
   { src: '/logos/logo3.svg', alt: 'Initech logo' },

@@ -3,6 +3,9 @@
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
+    "dependencies": {
+        "uplot": "^1.6.30"
+    },
 	"scripts": {
 		"dev": "vite dev",
 		"gen:og": "node scripts/gen-og.js",

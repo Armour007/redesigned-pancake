@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import TryItChart from './TryItChart.svelte';
   let loading = false;
   let inputObj: any = {
     agent_id: 'aura_agent_123',
@@ -8,6 +9,7 @@
   let result: any = null;
   let error: string | null = null;
   let history: Array<{ t: number; allow: boolean; latency: number }> = [];
+  let preferCharts = false; // enable interactive chart after mount
 
   let rsKey = '';
   let rsVal = '';
@@ -41,6 +43,8 @@
       error = e?.message || 'Unexpected error';
     } finally { loading = false; }
   }
+
+  onMount(() => { preferCharts = true; });
 </script>
 
 <section class="bg-slate-950">
@@ -93,21 +97,25 @@
         {#if history.length}
           <div class="mt-4">
             <div class="text-[11px] text-indigo-300">Last {history.length} decisions</div>
-            <svg class="mt-2 w-full h-20" viewBox="0 0 200 80" preserveAspectRatio="none">
-              <defs>
-                <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#6366f1" stop-opacity="0.6" />
-                  <stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
-                </linearGradient>
-              </defs>
-              {#if history.length > 1}
-                <polyline fill="none" stroke="#818cf8" stroke-width="2" points={history.map((h,i)=> `${(i/(Math.max(1,history.length-1)))*200},${80 - Math.min(78, h.latency)}` ).join(' ')} />
-                <polygon fill="url(#g)" points={`${history.map((h,i)=> `${(i/(Math.max(1,history.length-1)))*200},${80 - Math.min(78, h.latency)}` ).join(' ')} 200,80 0,80`} />
-              {/if}
-              {#each history as h, i}
-                <circle cx={(i/(Math.max(1,history.length-1)))*200} cy={80 - Math.min(78, h.latency)} r="2" fill={h.allow ? '#10b981' : '#ef4444'} />
-              {/each}
-            </svg>
+            {#if preferCharts}
+              <TryItChart {history} />
+            {:else}
+              <svg class="mt-2 w-full h-20" viewBox="0 0 200 80" preserveAspectRatio="none">
+                <defs>
+                  <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#6366f1" stop-opacity="0.6" />
+                    <stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
+                  </linearGradient>
+                </defs>
+                {#if history.length > 1}
+                  <polyline fill="none" stroke="#818cf8" stroke-width="2" points={history.map((h,i)=> `${(i/(Math.max(1,history.length-1)))*200},${80 - Math.min(78, h.latency)}` ).join(' ')} />
+                  <polygon fill="url(#g)" points={`${history.map((h,i)=> `${(i/(Math.max(1,history.length-1)))*200},${80 - Math.min(78, h.latency)}` ).join(' ')} 200,80 0,80`} />
+                {/if}
+                {#each history as h, i}
+                  <circle cx={(i/(Math.max(1,history.length-1)))*200} cy={80 - Math.min(78, h.latency)} r="2" fill={h.allow ? '#10b981' : '#ef4444'} />
+                {/each}
+              </svg>
+            {/if}
           </div>
         {/if}
       </div>
