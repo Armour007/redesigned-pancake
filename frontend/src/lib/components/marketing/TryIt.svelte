@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   let loading = false;
-  let reqId = 'req';
   let inputObj: any = {
     agent_id: 'aura_agent_123',
     request_context: { user_id: 'user_42', action: 'checkout.create', risk_signals: {} }
@@ -12,6 +11,9 @@
 
   let rsKey = '';
   let rsVal = '';
+
+  $: avgLatency = history.length ? Math.round(history.reduce((s,h)=> s + h.latency, 0) / history.length) : 0;
+  $: allowRate = history.length ? Math.round((history.filter(h=>h.allow).length / history.length) * 100) : 0;
 
   function toPretty(v: any) { return JSON.stringify(v, null, 2); }
   function parseMaybeNumber(v: string): any { const n = Number(v); return isFinite(n) ? n : v; }
@@ -32,7 +34,7 @@
       if (!res.ok) throw new Error('Request failed');
       result = await res.json();
       history = [
-        ...history.slice(-19),
+        ...history.slice(-49),
         { t: Date.now(), allow: result.decision === 'allow', latency: result.latency_ms ?? (Date.now()-start) }
       ];
     } catch (e: any) {
@@ -76,11 +78,32 @@
         {:else}
           <div class="mt-2 text-xs text-indigo-300">No response yet</div>
         {/if}
+
+        <div class="mt-4 grid grid-cols-2 gap-3">
+          <div class="rounded-lg bg-white/5 ring-1 ring-white/10 p-3">
+            <div class="text-xs text-indigo-300">Allow rate</div>
+            <div class="text-white text-xl font-semibold">{allowRate}%</div>
+          </div>
+          <div class="rounded-lg bg-white/5 ring-1 ring-white/10 p-3">
+            <div class="text-xs text-indigo-300">Avg latency</div>
+            <div class="text-white text-xl font-semibold">{avgLatency}ms</div>
+          </div>
+        </div>
+
         {#if history.length}
           <div class="mt-4">
             <div class="text-[11px] text-indigo-300">Last {history.length} decisions</div>
             <svg class="mt-2 w-full h-20" viewBox="0 0 200 80" preserveAspectRatio="none">
-              <polyline fill="none" stroke="#818cf8" stroke-width="2" points={history.map((h,i)=> `${(i/(Math.max(1,history.length-1)))*200},${80 - Math.min(78, h.latency)}` ).join(' ')} />
+              <defs>
+                <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#6366f1" stop-opacity="0.6" />
+                  <stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
+                </linearGradient>
+              </defs>
+              {#if history.length > 1}
+                <polyline fill="none" stroke="#818cf8" stroke-width="2" points={history.map((h,i)=> `${(i/(Math.max(1,history.length-1)))*200},${80 - Math.min(78, h.latency)}` ).join(' ')} />
+                <polygon fill="url(#g)" points={`${history.map((h,i)=> `${(i/(Math.max(1,history.length-1)))*200},${80 - Math.min(78, h.latency)}` ).join(' ')} 200,80 0,80`} />
+              {/if}
               {#each history as h, i}
                 <circle cx={(i/(Math.max(1,history.length-1)))*200} cy={80 - Math.min(78, h.latency)} r="2" fill={h.allow ? '#10b981' : '#ef4444'} />
               {/each}
