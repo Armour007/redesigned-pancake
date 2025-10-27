@@ -1,6 +1,6 @@
 <script lang="ts">
   import { caseStudies } from '$lib/customers/caseStudies';
-  export let data: { cs: (typeof caseStudies)[number] | null };
+  export let data: { cs: ((typeof caseStudies)[number] & { component?: any }) | null };
 </script>
 
 <section class="bg-slate-950 min-h-screen">
@@ -19,9 +19,15 @@
           </div>
         {/each}
       </div>
-      <article class="prose prose-invert prose-indigo mt-8 max-w-none">
-        {@html data.cs.bodyHtml}
-      </article>
+      {#if data.cs.component}
+        <article class="prose prose-invert prose-indigo mt-8 max-w-none">
+          <svelte:component this={data.cs.component} />
+        </article>
+      {:else}
+        <article class="prose prose-invert prose-indigo mt-8 max-w-none">
+          {@html data.cs.bodyHtml}
+        </article>
+      {/if}
     {:else}
       <h1 class="text-3xl sm:text-4xl font-semibold text-white">Case study not found</h1>
     {/if}

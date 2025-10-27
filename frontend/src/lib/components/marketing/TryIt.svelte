@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import TryItChart from './TryItChart.svelte';
+  import { env as pub } from '$env/dynamic/public';
   let loading = false;
   let inputObj: any = {
     agent_id: 'aura_agent_123',
@@ -44,7 +45,10 @@
     } finally { loading = false; }
   }
 
-  onMount(() => { preferCharts = true; });
+  onMount(() => {
+    const flag = (pub.PUBLIC_TRYIT_CHARTS ?? '').toString().toLowerCase();
+    preferCharts = flag === '1' || flag === 'true' || flag === 'yes';
+  });
 </script>
 
 <section class="bg-slate-950">

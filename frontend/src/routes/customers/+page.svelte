@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { caseStudies } from '$lib/customers/caseStudies';
+  import type { CaseStudy } from '$lib/customers/caseStudies';
+  export let data: { caseStudies: Array<CaseStudy | { slug: string; name: string; logo: string; headline: string; summary: string }> };
 </script>
 
 <section class="bg-slate-950 min-h-screen">
@@ -8,7 +9,7 @@
     <p class="mt-2 text-indigo-200">How teams use AURA to ship trust decisions faster.</p>
 
     <div class="mt-8 grid sm:grid-cols-2 gap-6">
-      {#each caseStudies as c}
+      {#each data.caseStudies as c}
         <a class="block rounded-xl ring-1 ring-white/10 bg-white/5 p-6 hover:bg-white/10 transition" href={'/customers/' + c.slug}>
           <div class="flex items-center gap-3">
             <img src={c.logo} alt={c.name + ' logo'} class="h-6 w-auto" />

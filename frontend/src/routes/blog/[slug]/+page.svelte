@@ -1,6 +1,6 @@
 <script lang="ts">
   import { posts } from '$lib/blog/posts';
-  export let data: { post: (typeof posts)[number] | null };
+  export let data: { post: ((typeof posts)[number] & { component?: any }) | null };
 </script>
 
 <section class="bg-slate-950 min-h-screen">
@@ -8,9 +8,15 @@
     {#if data.post}
       <div class="text-sm text-indigo-300">{data.post.date}</div>
       <h1 class="mt-1 text-3xl sm:text-4xl font-semibold text-white">{data.post.title}</h1>
-      <article class="prose prose-invert prose-indigo mt-6 max-w-none">
-        {@html data.post.html}
-      </article>
+      {#if data.post.component}
+        <article class="prose prose-invert prose-indigo mt-6 max-w-none">
+          <svelte:component this={data.post.component} />
+        </article>
+      {:else}
+        <article class="prose prose-invert prose-indigo mt-6 max-w-none">
+          {@html data.post.html}
+        </article>
+      {/if}
     {:else}
       <h1 class="text-3xl sm:text-4xl font-semibold text-white">Post not found</h1>
     {/if}
