@@ -79,7 +79,6 @@
   function notifyDLQChange() {
     try { window.dispatchEvent(new CustomEvent('dlq:changed')); } catch {}
   }
-
   function parsePayload(p: any): any {
     if (typeof p === 'string') {
       try { return JSON.parse(p); } catch { return p; }
