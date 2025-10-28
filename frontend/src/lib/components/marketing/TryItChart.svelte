@@ -45,7 +45,7 @@
           }
         ],
         hooks: {
-          setCursor: [u => {
+          setCursor: [(u: any) => {
             const idx = u.cursor.idx;
             if (idx != null && idx >= 0 && idx < history.length) {
               const h = history[idx];

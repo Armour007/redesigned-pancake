@@ -66,17 +66,18 @@
       if (reset) items = parsed; else items = [...items, ...parsed];
       fetchedCount += parsed.length;
       selected = {};
-        // Update paging cursor using server-provided next_before_id (older cursor)
-        beforeId = (data.next_before_id && String(data.next_before_id)) || null;
-
-  function notifyDLQChange() {
-    try { window.dispatchEvent(new CustomEvent('dlq:changed')); } catch {}
-  }
+      // Update paging cursor using server-provided next_before_id (older cursor)
+      beforeId = (data.next_before_id && String(data.next_before_id)) || null;
     } catch (e: any) {
       error = e?.message || 'failed to load DLQ';
     } finally {
       loading = false;
     }
+  }
+
+  // Broadcast that DLQ state changed (e.g., for nav badges to refresh)
+  function notifyDLQChange() {
+    try { window.dispatchEvent(new CustomEvent('dlq:changed')); } catch {}
   }
 
   function parsePayload(p: any): any {
