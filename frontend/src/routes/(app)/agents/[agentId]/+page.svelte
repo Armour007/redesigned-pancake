@@ -3,6 +3,7 @@
 	import type { PageData } from './$types';
 	import { page } from '$app/stores'; // Used for potential future features like active link styling
 	import RuleBuilderModal from '$lib/components/RuleBuilderModal.svelte';
+	import SDKPickerModal from '$lib/components/SDKPickerModal.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { agentContext } from '$lib/stores/agentContext'; // Import the shared store
 	import { API_BASE, authHeaders } from '$lib/api';
@@ -15,6 +16,8 @@
 	// Component State
 	let activeTab = 'rules'; // Default active tab
 	let showRuleBuilderModal = false;
+	let showSDKPickerModal = false;
+	let lastSavedAction: string = '';
 
 	// --- Helper function to format date strings ---
 	function formatDate(dateString: string | undefined | null): string {
@@ -348,9 +351,24 @@
 			on:close={() => (showRuleBuilderModal = false)}
 			on:save={(event) => {
 				console.log('Rule Saved event received (from parent):', event.detail);
-				window.location.reload(); // Simple reload for MVP
+					// After a successful rule save, open SDK Picker for a frictionless handoff
+					try {
+						const detail: any = event.detail || {};
+						const rule = detail.rule || detail?.created_rule || detail; // try a few shapes
+						lastSavedAction = rule?.action || '';
+					} catch {}
+					showSDKPickerModal = true;
 			}}
 		/>
+
+				{#if showSDKPickerModal}
+					<SDKPickerModal
+						bind:showModal={showSDKPickerModal}
+						agentId={data.agent?.id || ''}
+						organizationId={data.agent?.organization_id || ''}
+						action={lastSavedAction}
+					/>
+				{/if}
 	{/if}
 
 	<!-- Create API Key Modal -->

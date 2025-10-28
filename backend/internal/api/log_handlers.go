@@ -7,6 +7,7 @@ import (
 
 	database "github.com/Armour007/aura-backend/internal"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // GetEventLogs handles requests to retrieve event logs
@@ -25,6 +26,17 @@ func GetEventLogs(c *gin.Context) {
 		AgentID    *string   `json:"agent_id,omitempty"`
 		IP         *string   `json:"client_ip_address,omitempty"`
 		ApiKeyPref *string   `json:"api_key_prefix_used,omitempty"`
+	}
+
+	// Optional: if agentId is provided, enforce that the agent belongs to this org
+	if agentId != "" {
+		if a, err := uuid.Parse(agentId); err == nil {
+			if o, err := uuid.Parse(orgId); err == nil {
+				if !ensureAgentInOrg(c, a, o) {
+					return
+				}
+			}
+		}
 	}
 
 	// Build query

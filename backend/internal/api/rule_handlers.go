@@ -17,7 +17,7 @@ import (
 func AddPermissionRule(c *gin.Context) {
 	var req AddRuleRequest
 
-	_ = c.Param("orgId") // We might use this later for auth
+	orgIdStr := c.Param("orgId")
 	agentIdStr := c.Param("agentId")
 
 	// Validate request body
@@ -31,7 +31,12 @@ func AddPermissionRule(c *gin.Context) {
 		return
 	}
 
-	// Validate agentId from URL parameter
+	// Validate IDs
+	orgId, err := uuid.Parse(orgIdStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid organization ID format"})
+		return
+	}
 	agentId, err := uuid.Parse(agentIdStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid agent ID format"})
@@ -44,9 +49,10 @@ func AddPermissionRule(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "User ID not found in context"})
 		return
 	}
-	// TODO: Add authorization checks:
-	// 1. Does the user belong to orgId?
-	// 2. Does the agent belong to orgId?
+	// Tenancy guard: agent must belong to the org
+	if !ensureAgentInOrg(c, agentId, orgId) {
+		return
+	}
 
 	// Create Permission struct for database insertion
 	newPermission := database.Permission{
@@ -114,11 +120,15 @@ func AddPermissionRule(c *gin.Context) {
 // GetPermissionRules handles requests to list rules for an agent
 // GetPermissionRules handles requests to list rules for an agent
 func GetPermissionRules(c *gin.Context) {
-
-	_ = c.Param("orgId") // For auth later
+	orgIdStr := c.Param("orgId")
 	agentIdStr := c.Param("agentId")
 
-	// Validate agentId
+	// Validate IDs
+	orgId, err := uuid.Parse(orgIdStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid organization ID format"})
+		return
+	}
 	agentId, err := uuid.Parse(agentIdStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid agent ID format"})
@@ -131,7 +141,10 @@ func GetPermissionRules(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "User ID not found in context"})
 		return
 	}
-	// TODO: Add authorization checks
+	// Tenancy guard: agent must belong to the org
+	if !ensureAgentInOrg(c, agentId, orgId) {
+		return
+	}
 
 	// Query database for permissions associated with this agent
 	var permissions []database.Permission // Slice to hold multiple permissions
@@ -165,12 +178,12 @@ func GetPermissionRules(c *gin.Context) {
 // DeletePermissionRule handles requests to delete a specific rule
 // DeletePermissionRule handles requests to delete a specific rule
 func DeletePermissionRule(c *gin.Context) {
-	orgIdStr := c.Param("orgId") // For auth later
+	orgIdStr := c.Param("orgId")
 	agentIdStr := c.Param("agentId")
 	ruleIdStr := c.Param("ruleId")
 
 	// Validate IDs
-	_, err := uuid.Parse(orgIdStr) // Parse orgId for potential auth check
+	orgId, err := uuid.Parse(orgIdStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid organization ID format"})
 		return
@@ -183,6 +196,11 @@ func DeletePermissionRule(c *gin.Context) {
 	ruleId, err := uuid.Parse(ruleIdStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid rule ID format"})
+		return
+	}
+
+	// Tenancy guard: agent must belong to the org
+	if !ensureAgentInOrg(c, agentId, orgId) {
 		return
 	}
 

@@ -1,0 +1,56 @@
+image:
+  repository: aura-backend
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8081
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+env:
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_USER: "aura_user"
+  DB_PASSWORD: "change-me"
+  DB_NAME: "aura_db"
+  AURA_REDIS_ADDR: "redis:6379"
+  AURA_QUEUE_ENABLE: "true"
+  AURA_FRONTEND_BASE_URL: "http://localhost:5173"
+  AURA_API_BASE_URL: "http://localhost:8081"
+
+configMap:
+  enabled: false
+  data: {}
+
+secret:
+  enabled: false
+  data: {}
+
+hpa:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+prometheusRule:
+  enabled: false
+  # namespace: monitoring
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: aura.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []

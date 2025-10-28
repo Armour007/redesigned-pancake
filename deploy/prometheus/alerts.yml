@@ -1,0 +1,63 @@
+groups:
+  - name: aura-service
+    rules:
+      - alert: HTTP5xxRateHigh
+        expr: sum(rate(aura_http_requests_total{status=~"5.."}[5m])) > 1
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: High 5xx rate
+          description: HTTP 5xx rate is above 1 req/s over 5m.
+
+      - alert: VerifyP95LatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(aura_http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 1
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: p95 latency > 1s
+          description: HTTP p95 latency exceeded 1s over 10m.
+
+      - alert: ExternalErrorRateHigh
+        expr: |
+          sum(rate(aura_external_op_total{outcome="error"}[5m])) by (op)
+            /
+          sum(rate(aura_external_op_total[5m])) by (op)
+          > 0.2
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: External op error ratio high
+          description: "External operation {{ $labels.op }} has error ratio > 20% over 10m."
+
+      - alert: CircuitBreakerOpen
+        expr: max(aura_circuit_breaker_open) by (breaker) > 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Circuit breaker open
+          description: "Breaker {{ $labels.breaker }} has been open for over 5 minutes."
+
+      - alert: DLQDepthHigh
+        expr: aura_dlq_depth{stream="codegen"} > 50
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: DLQ depth high
+          description: Codegen DLQ depth exceeded 50 for 10 minutes.
+
+      - alert: QueuePendingHigh
+        expr: aura_queue_pending{stream="codegen"} > 50
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Queue pending high
+          description: Codegen consumer group pending messages exceeded 50 for 10 minutes.

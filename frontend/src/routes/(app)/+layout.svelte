@@ -9,6 +9,8 @@
   // A more robust solution would use hooks or a dedicated auth store.
   let user: { full_name?: string; email?: string; avatarUrl?: string } = {};
   let menuOpen = false;
+  let dlqTotal: number | null = null; // codegen DLQ
+  let webhookDlqTotal: number | null = null;
 
   async function loadMe() {
     const token = localStorage.getItem('aura_token');
@@ -28,7 +30,31 @@
       goto('/login'); // Redirect to login if no token
     }
     loadMe();
+    // Fetch DLQ total for badge (best-effort)
+  refreshDLQTotals();
+  const id = setInterval(refreshDLQTotals, 30000);
+  const handler = () => refreshDLQTotals();
+    try { window.addEventListener('dlq:changed', handler); } catch {}
+    return () => { clearInterval(id); try { window.removeEventListener('dlq:changed', handler); } catch {} };
   });
+
+  async function refreshDLQTotals() {
+    try {
+      const token = localStorage.getItem('aura_token') || '';
+      const [r1, r2] = await Promise.all([
+        fetch(`${API_BASE.replace(/\/$/, '')}/admin/queue/dlq?count=1`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_BASE.replace(/\/$/, '')}/admin/webhooks/dlq?count=1`, { headers: { Authorization: `Bearer ${token}` } })
+      ]);
+      if (r1.ok) {
+        const d1 = await r1.json();
+        if (typeof d1.total === 'number') dlqTotal = d1.total;
+      }
+      if (r2.ok) {
+        const d2 = await r2.json();
+        if (typeof d2.total === 'number') webhookDlqTotal = d2.total;
+      }
+    } catch {}
+  }
 
   // Sidebar navigation items
   const navItems = [
@@ -37,6 +63,8 @@
     { href: '/logs', label: 'Logs', icon: 'article' },
     { href: '/settings', label: 'Settings', icon: 'settings' },
     { href: '/apikeys', label: 'API Keys', icon: 'key' },
+    { href: '/admin/queue', label: 'Queue (DLQ)', icon: 'error' },
+    { href: '/admin/webhooks/dlq', label: 'Webhooks DLQ', icon: 'notifications_active' },
   ];
 
   function handleLogout() {
@@ -64,7 +92,14 @@
           }`}
         >
           <span class="material-symbols-outlined text-xl">{item.icon}</span>
-          <span class="text-sm font-medium">{item.label}</span>
+          <span class="text-sm font-medium flex items-center gap-2">
+            {item.label}
+            {#if item.href === '/admin/queue' && dlqTotal && dlqTotal > 0}
+              <span class="inline-flex items-center justify-center text-xs bg-red-600 text-white px-2 py-0.5 rounded-full">{dlqTotal}</span>
+            {:else if item.href === '/admin/webhooks/dlq' && webhookDlqTotal && webhookDlqTotal > 0}
+              <span class="inline-flex items-center justify-center text-xs bg-red-600 text-white px-2 py-0.5 rounded-full">{webhookDlqTotal}</span>
+            {/if}
+          </span>
         </a>
       {/each}
     </nav>

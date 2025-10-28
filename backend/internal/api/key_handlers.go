@@ -251,6 +251,89 @@ func DeleteAPIKey(c *gin.Context) {
 	}()
 }
 
+// RotateAPIKey replaces the secret for an existing API key and returns the new one-time secret.
+// POST /organizations/:orgId/apikeys/:keyId/rotate
+func RotateAPIKey(c *gin.Context) {
+	orgIdStr := c.Param("orgId")
+	keyIdStr := c.Param("keyId")
+
+	orgID, err := uuid.Parse(orgIdStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid organization ID"})
+		return
+	}
+	keyID, err := uuid.Parse(keyIdStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid key ID"})
+		return
+	}
+
+	// Ensure key exists and belongs to org, and not revoked
+	var key database.APIKey
+	err = database.DB.Get(&key, `SELECT id, organization_id, name, key_prefix, hashed_key, created_by_user_id, last_used_at, expires_at, created_at FROM api_keys WHERE id=$1 AND organization_id=$2 AND revoked_at IS NULL`, keyID, orgID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "API key not found or revoked"})
+		return
+	}
+
+	// Generate new secret and hash
+	secretRaw, err := generateSecret()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate new secret"})
+		return
+	}
+	newSecret := "aura_sk_" + secretRaw
+	newPrefix := secretRaw[:8]
+	hashed, err := bcrypt.GenerateFromPassword([]byte(newSecret), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to secure new secret"})
+		return
+	}
+
+	// Update in place: hashed_key and key_prefix
+	_, err = database.DB.Exec(`UPDATE api_keys SET hashed_key=$1, key_prefix=$2 WHERE id=$3 AND organization_id=$4`, string(hashed), newPrefix, keyID, orgID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to persist rotated secret"})
+		return
+	}
+
+	// Audit log (fire and forget)
+	go func() {
+		ua := c.Request.UserAgent()
+		path := c.FullPath()
+		rid := c.GetString("requestID")
+		ridPtr, uaPtr, pathPtr := &rid, &ua, &path
+		status := 200
+		statusPtr := &status
+		details := map[string]any{"key_id": keyID.String()}
+		event := database.EventLog{
+			OrganizationID: orgID,
+			AgentID:        nil,
+			Timestamp:      time.Now(),
+			EventType:      "API_KEY_ROTATED",
+			Decision:       "SUCCESS",
+			RequestDetails: toJSON(details),
+			DecisionReason: nil,
+			ClientIPAddress: func() *net.IP {
+				ip := net.ParseIP(c.ClientIP())
+				if ip != nil {
+					return &ip
+				}
+				return nil
+			}(),
+			RequestID:  ridPtr,
+			UserAgent:  uaPtr,
+			Path:       pathPtr,
+			StatusCode: statusPtr,
+		}
+		_, _ = database.DB.NamedExec(`INSERT INTO event_logs (organization_id, agent_id, timestamp, event_type, decision, request_details, client_ip_address, request_id, user_agent, path, status_code)
+			VALUES (:organization_id, :agent_id, :timestamp, :event_type, :decision, :request_details, :client_ip_address, :request_id, :user_agent, :path, :status_code)`, event)
+	}()
+
+	// Return one-time secret
+	c.JSON(http.StatusOK, gin.H{"id": keyID, "key_prefix": newPrefix, "secret_key": newSecret})
+}
+
 // toJSON marshals a map into json.RawMessage without failing the outer handler
 func toJSON(v map[string]any) (out []byte) {
 	b, err := json.Marshal(v)

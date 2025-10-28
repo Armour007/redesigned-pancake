@@ -11,6 +11,41 @@
       ]
     },
     {
+      "type": "timeseries",
+      "title": "HTTP p95 latency by path",
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le, path)(rate(aura_http_request_duration_seconds_bucket[5m])))"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "External ops p95 latency by op",
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le, op)(rate(aura_external_op_duration_seconds_bucket[5m])))"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "External ops error rate by op",
+      "targets": [
+        {"expr": "sum by (op)(rate(aura_external_op_total{outcome=\"error\"}[5m]))"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Webhook delivery success rate",
+      "targets": [
+        {"expr": "sum(rate(aura_external_op_total{op=\"webhook_send\",outcome=\"success\"}[5m])) / clamp_min(sum(rate(aura_external_op_total{op=\"webhook_send\"}[5m])), 1e-9)"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Webhook delivery latency p95",
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le)(rate(aura_external_op_duration_seconds_bucket{op=\"webhook_send\",outcome=\"success\"}[5m])))"}
+      ]
+    },
+    {
       "type": "stat",
       "title": "HTTP requests (rps)",
       "targets": [
@@ -23,6 +58,30 @@
       "targets": [
         {"expr": "sum(rate(aura_verify_decisions_total{decision=\"ALLOWED\"}[5m]))"},
         {"expr": "sum(rate(aura_verify_decisions_total{decision=\"DENIED\"}[5m]))"}
+      ]
+    }
+    ,
+    {
+      "type": "timeseries",
+      "title": "DLQ insert rate by reason",
+      "targets": [
+        {"expr": "sum by (reason)(rate(aura_dlq_insert_total{stream=\"codegen\"}[5m]))"}
+      ]
+    }
+    ,
+    {
+      "type": "stat",
+      "title": "DLQ depth (codegen)",
+      "targets": [
+        {"expr": "sum(aura_dlq_depth{stream=\"codegen\"})"}
+      ]
+    }
+    ,
+    {
+      "type": "table",
+      "title": "Top DLQ reasons (1h)",
+      "targets": [
+        {"expr": "sum by (reason)(rate(aura_dlq_insert_total{stream=\"codegen\"}[1h]))"}
       ]
     }
   ],

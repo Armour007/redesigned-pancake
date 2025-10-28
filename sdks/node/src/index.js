@@ -42,3 +42,5 @@ export class AuraClient {
     return res.json();
   }
 }
+
+export { protect, protectExpress } from './protect.js'

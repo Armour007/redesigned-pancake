@@ -1,0 +1,5 @@
+apiVersion: v2
+name: aura
+description: Minimal Helm chart for AURA backend
+version: 0.1.0
+appVersion: "0.1.0"

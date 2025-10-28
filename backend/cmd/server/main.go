@@ -4,12 +4,15 @@ import (
 	"context"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
 	database "github.com/Armour007/aura-backend/internal"
@@ -34,6 +37,19 @@ func main() {
 	if shutdown, ok := api.SetupOTelFromEnv(); ok {
 		defer shutdown(context.Background())
 		router.Use(otelgin.Middleware("aura-backend"))
+	}
+	// Start background codegen worker if queue enabled; manage cancellable context
+	if os.Getenv("AURA_QUEUE_ENABLE") != "" {
+		wctx, cancel := context.WithCancel(context.Background())
+		go api.StartCodegenWorker(wctx)
+		// Trap SIGINT/SIGTERM to cancel worker gracefully
+		go func() {
+			sigc := make(chan os.Signal, 1)
+			signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
+			<-sigc
+			log.Println("signal received, cancelling worker...")
+			cancel()
+		}()
 	}
 	// Metrics
 	router.Use(api.MetricsMiddleware())
@@ -106,6 +122,26 @@ func main() {
 			c.JSON(503, gin.H{"status": "not ready", "error": err.Error()})
 			return
 		}
+		// If queue is enabled, require Redis to be reachable
+		if os.Getenv("AURA_QUEUE_ENABLE") != "" {
+			addr := os.Getenv("AURA_REDIS_ADDR")
+			if addr == "" {
+				addr = os.Getenv("REDIS_ADDR")
+			}
+			if addr == "" {
+				c.JSON(503, gin.H{"status": "not ready", "error": "redis addr not configured"})
+				return
+			}
+			rdb := redis.NewClient(&redis.Options{Addr: addr, Password: os.Getenv("AURA_REDIS_PASSWORD")})
+			rctx, rcancel := context.WithTimeout(c.Request.Context(), 300*time.Millisecond)
+			defer rcancel()
+			if err := rdb.Ping(rctx).Err(); err != nil {
+				c.JSON(503, gin.H{"status": "not ready", "error": "redis ping failed"})
+				_ = rdb.Close()
+				return
+			}
+			_ = rdb.Close()
+		}
 		c.JSON(200, gin.H{"status": "ready"})
 	})
 
@@ -115,6 +151,40 @@ func main() {
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	// Tiny redirect to frontend Quick Start for first-time onboarding
 	router.GET("/quickstart", api.QuickstartRedirect)
+
+	// Public signed download for generated SDKs (no auth) when signed URL is present
+	router.GET("/sdk/public/download-generated/:jobId", api.DownloadGeneratedSDKPublic)
+
+	// SDK utilities (protected): download curated SDK bundles
+	// These endpoints require user authentication
+	// Example: GET /sdk/download?lang=node|python|go
+	// Response: application/zip attachment with the selected SDK bundle
+	protectedSDK := router.Group("/sdk")
+	protectedSDK.Use(api.AuthMiddleware())
+	{
+		protectedSDK.GET("/download", api.DownloadSDK)
+		protectedSDK.GET("/supported-langs", api.GetSupportedLangs)
+		protectedSDK.POST("/generate", api.GenerateSDK)
+		protectedSDK.GET("/generate/:jobId", api.GetSDKJob)
+		protectedSDK.GET("/download-generated/:jobId", api.DownloadGeneratedSDK)
+	}
+
+	// Admin utilities
+	admin := router.Group("/admin")
+	admin.Use(api.AuthMiddleware())
+	{
+		admin.POST("/test-smtp", api.TestSMTP)
+		admin.GET("/health", api.AdminHealth)
+		admin.POST("/queue/drain", api.QueueDrain)
+		admin.GET("/queue/drain/status", api.QueueDrainStatus)
+		admin.GET("/queue/drain/complete", api.QueueDrainComplete)
+		admin.GET("/queue/dlq", api.ListDLQ)
+		admin.POST("/queue/dlq/requeue", api.RequeueDLQ)
+		admin.POST("/queue/dlq/delete", api.DeleteDLQ)
+		admin.GET("/webhooks/dlq", api.ListWebhookDLQ)
+		admin.POST("/webhooks/dlq/requeue", api.RequeueWebhookDLQ)
+		admin.POST("/webhooks/dlq/delete", api.DeleteWebhookDLQ)
+	}
 
 	protectedRoutes := router.Group("/")
 	protectedRoutes.Use(api.AuthMiddleware()) // Apply the middleware HERE
@@ -157,6 +227,7 @@ func main() {
 				apiKeyRoutes.POST("", api.RequireOrgAdmin(), api.CreateAPIKey)
 				apiKeyRoutes.GET("", api.RequireOrgAdmin(), api.GetAPIKeys)
 				apiKeyRoutes.DELETE("/:keyId", api.RequireOrgAdmin(), api.DeleteAPIKey)
+				apiKeyRoutes.POST("/:keyId/rotate", api.RequireOrgAdmin(), api.RotateAPIKey)
 			}
 
 			// Webhook endpoints management

@@ -32,7 +32,7 @@
 </script>
 
 {#if open}
-  <div class="fixed inset-0 bg-black/40 z-40" />
+  <div class="fixed inset-0 bg-black/40 z-40"></div>
   <aside class="fixed right-0 top-0 h-full w-full sm:w-[560px] bg-white z-50 shadow-xl overflow-y-auto">
     <div class="p-5 border-b flex items-center justify-between">
       <h2 class="text-lg font-semibold">SDK Quick Start</h2>

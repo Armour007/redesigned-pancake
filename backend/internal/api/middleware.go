@@ -145,6 +145,8 @@ func ApiKeyAuthMiddleware() gin.HandlerFunc {
 		}
 		now := time.Now()
 		_, _ = database.DB.Exec(`UPDATE api_keys SET last_used_at=$1 WHERE id=$2`, now, key.ID)
+		// Usage metrics
+		RecordAPIKeyUsage(keyPrefix, key.OrganizationID.String())
 		c.Set("orgID", key.OrganizationID.String())
 		c.Set("apiKeyPrefix", keyPrefix)
 		c.Set("apiKeyID", key.ID.String())

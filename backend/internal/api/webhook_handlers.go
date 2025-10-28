@@ -67,7 +67,7 @@ func ListWebhookEndpoints(c *gin.Context) {
 func DeleteWebhookEndpoint(c *gin.Context) {
 	orgIDStr := c.Param("orgId")
 	whIDStr := c.Param("webhookId")
-	_, err := uuid.Parse(orgIDStr)
+	orgID, err := uuid.Parse(orgIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid organization ID"})
 		return
@@ -77,7 +77,8 @@ func DeleteWebhookEndpoint(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid webhook ID"})
 		return
 	}
-	res, err := database.DB.Exec(`DELETE FROM webhook_endpoints WHERE id=$1`, whID)
+	// Constrain deletion by org to prevent cross-tenant deletes
+	res, err := database.DB.Exec(`DELETE FROM webhook_endpoints WHERE id=$1 AND organization_id=$2`, whID, orgID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete webhook endpoint"})
 		return

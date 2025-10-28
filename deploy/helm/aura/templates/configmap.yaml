@@ -1,0 +1,13 @@
+{{- if .Values.configMap.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aura.fullname" . }}-config
+  labels:
+    app.kubernetes.io/name: {{ include "aura.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+{{- range $k, $v := .Values.configMap.data }}
+  {{ $k }}: "{{ $v }}"
+{{- end }}
+{{- end }}

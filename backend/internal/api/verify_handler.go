@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json" // Make sure this is imported
 	"fmt"
 	"log"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 
 	database "github.com/Armour007/aura-backend/internal"
 	"github.com/Armour007/aura-backend/internal/engine"
@@ -68,6 +70,7 @@ func HandleVerifyRequest(c *gin.Context) {
 
 	// record metrics for decision outcome with org label
 	RecordDecision(decision, orgID.String())
+	RecordDecisionReason(reason, decision, orgID.String())
 
 	// Log the event asynchronously
 	go func() {
@@ -201,27 +204,53 @@ func dispatchWebhooks(orgID uuid.UUID, eventType string, payload []byte) {
 	if len(endpoints) == 0 {
 		return
 	}
-	ts := time.Now().Unix()
 	for _, ep := range endpoints {
-		sig := utils.ComputeWebhookSignature(ep.Secret, ts, payload)
-		req, err := http.NewRequest("POST", ep.URL, bytes.NewReader(payload))
-		if err != nil {
-			continue
+		eventID := uuid.New().String()
+		attempts := 3
+		var lastStatus int
+		for i := 0; i < attempts; i++ {
+			ts := time.Now().Unix()
+			sig := utils.ComputeWebhookSignature(ep.Secret, ts, payload)
+			req, err := http.NewRequest("POST", ep.URL, bytes.NewReader(payload))
+			if err != nil {
+				break
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("AURA-Event", eventType)
+			req.Header.Set("AURA-Webhook-ID", ep.ID.String())
+			req.Header.Set("AURA-Event-ID", eventID)
+			req.Header.Set("Idempotency-Key", eventID)
+			req.Header.Set("AURA-Signature", fmt.Sprintf("t=%d,v1=%s", ts, sig))
+			client := &http.Client{Timeout: 3 * time.Second}
+			resp, err := client.Do(req)
+			if err == nil {
+				lastStatus = resp.StatusCode
+				_ = resp.Body.Close()
+			}
+			if err == nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				break
+			}
+			// backoff
+			time.Sleep(time.Duration(500*(1<<i)) * time.Millisecond)
 		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("AURA-Event", eventType)
-		req.Header.Set("AURA-Webhook-ID", ep.ID.String())
-		req.Header.Set("AURA-Signature", fmt.Sprintf("t=%d,v1=%s", ts, sig))
-		// send with short timeout client
-		client := &http.Client{Timeout: 3 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Printf("webhook POST error to %s: %v", ep.URL, err)
-			continue
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			log.Printf("webhook non-2xx to %s: %d", ep.URL, resp.StatusCode)
+		// If final attempt failed or non-2xx, push to DLQ
+		if lastStatus < 200 || lastStatus >= 300 {
+			if redisClient != nil {
+				_ = redisClient.XAdd(context.Background(), &redis.XAddArgs{Stream: "aura:webhooks:dlq", Values: map[string]any{
+					"org_id":    orgID.String(),
+					"endpoint":  ep.ID.String(),
+					"url":       ep.URL,
+					"event":     eventType,
+					"payload":   string(payload),
+					"attempts":  attempts,
+					"last_code": lastStatus,
+					"at":        time.Now().Unix(),
+				}}).Err()
+				RecordDLQInsert("webhooks", "delivery_failed")
+				if x, err := redisClient.XLen(context.Background(), "aura:webhooks:dlq").Result(); err == nil {
+					SetDLQDepth("webhooks", x)
+				}
+			}
 		}
 	}
 }
