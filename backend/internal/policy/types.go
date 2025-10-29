@@ -109,3 +109,6 @@ func NewStore() *Store {
 func (s *Store) RegisterEvaluator(e Evaluator) {
 	s.Evaluators[e.Name()] = e
 }
+
+// Factory to construct OPA evaluator without importing OPA in API layer
+// (OPA evaluator registered in API layer when enabled by env)

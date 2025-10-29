@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 
 	db "github.com/Armour007/aura-backend/internal"
 	"github.com/Armour007/aura-backend/internal/audit"
 	"github.com/Armour007/aura-backend/internal/policy"
+	opaeval "github.com/Armour007/aura-backend/internal/policy/opa"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -15,7 +17,12 @@ import (
 // Evaluator registry (process-wide)
 var evalRegistry = func() map[string]policy.Evaluator {
 	m := map[string]policy.Evaluator{}
+	// Built-in AuraJSON engine
 	m[policy.EngineAuraJSON] = &policy.AuraJSONEvaluator{}
+	// Optional OPA/Rego engine (enable via env AURA_POLICY_ENABLE_OPA=1)
+	if os.Getenv("AURA_POLICY_ENABLE_OPA") == "1" {
+		m[policy.EngineRego] = opaeval.New()
+	}
 	return m
 }()
 
