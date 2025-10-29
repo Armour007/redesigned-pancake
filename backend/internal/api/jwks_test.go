@@ -46,11 +46,14 @@ func TestOrgJWKS_MultiKey_ReturnsBothKeys(t *testing.T) {
 	sum2 := sha256.Sum256(pub2)
 	expectedKid2 := b64url(sum2[:8])
 
-	// mock rows for OrgJWKS query
-	query := regexp.QuoteMeta(`SELECT ed25519_private_key_base64, COALESCE(kid,'') FROM trust_keys WHERE org_id=$1 AND active=true ORDER BY created_at DESC LIMIT 10`)
-	rows := sqlmock.NewRows([]string{"ed25519_private_key_base64", "kid"}).
-		AddRow(b64url(seed1), "kid-abc").
-		AddRow(b64url(seed2), "")
+	// mock rows for OrgJWKS query (new columns: alg, jwk_pub, ed25519_private_key_base64, kid)
+	query := regexp.QuoteMeta(`SELECT alg, COALESCE(jwk_pub,'{}'::jsonb), COALESCE(ed25519_private_key_base64,''), COALESCE(kid,'') FROM trust_keys WHERE org_id=$1 AND active=true ORDER BY created_at DESC LIMIT 10`)
+	// Provide jwk_pub so JWKS path uses KMS-style records
+	jwk1 := `{"kty":"OKP","crv":"Ed25519","alg":"EdDSA","use":"sig","x":"` + b64url(pub1) + `"}`
+	jwk2 := `{"kty":"OKP","crv":"Ed25519","alg":"EdDSA","use":"sig","x":"` + b64url(pub2) + `"}`
+	rows := sqlmock.NewRows([]string{"alg", "jwk_pub", "ed25519_private_key_base64", "kid"}).
+		AddRow("EdDSA", []byte(jwk1), "", "kid-abc").
+		AddRow("EdDSA", []byte(jwk2), "", "")
 	mock.ExpectQuery(query).WithArgs(orgID).WillReturnRows(rows)
 
 	// gin test context
@@ -110,9 +113,9 @@ func TestVerifyEdDSA_KidSelection_FromDB(t *testing.T) {
 	_ = pub // not used directly, but here if needed
 	kid := "kid-db"
 
-	// Expect query to fetch by kid and return the seed
-	getQ := regexp.QuoteMeta(`SELECT ed25519_private_key_base64 FROM trust_keys WHERE kid=$1 AND active=true ORDER BY created_at DESC LIMIT 1`)
-	mock.ExpectQuery(getQ).WithArgs(kid).WillReturnRows(sqlmock.NewRows([]string{"ed25519_private_key_base64"}).AddRow(b64url(seed)))
+	// Expect query to fetch by kid and return jwk_pub (empty) and the seed
+	getQ := regexp.QuoteMeta(`SELECT jwk_pub, COALESCE(ed25519_private_key_base64,'') FROM trust_keys WHERE kid=$1 AND active=true ORDER BY created_at DESC LIMIT 1`)
+	mock.ExpectQuery(getQ).WithArgs(kid).WillReturnRows(sqlmock.NewRows([]string{"jwk_pub", "ed25519_private_key_base64"}).AddRow([]byte("{}"), b64url(seed)))
 
 	// Build a compact JWS with kid and valid signature
 	header := b64url([]byte(`{"alg":"EdDSA","typ":"JWT","kid":"` + kid + `"}`))

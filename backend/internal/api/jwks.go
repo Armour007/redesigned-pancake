@@ -35,6 +35,7 @@ type jwk struct {
 	Use string `json:"use,omitempty"`
 	Kid string `json:"kid,omitempty"`
 	X   string `json:"x,omitempty"`
+	Y   string `json:"y,omitempty"`
 }
 
 type jwks struct {
@@ -171,7 +172,7 @@ func OrgJWKS(c *gin.Context) {
 			return
 		}
 	}
-	rows, err := database.DB.Queryx(`SELECT ed25519_private_key_base64, COALESCE(kid,'') FROM trust_keys WHERE org_id=$1 AND active=true ORDER BY created_at DESC LIMIT 10`, orgID)
+	rows, err := database.DB.Queryx(`SELECT alg, COALESCE(jwk_pub,'{}'::jsonb), COALESCE(ed25519_private_key_base64,''), COALESCE(kid,'') FROM trust_keys WHERE org_id=$1 AND active=true ORDER BY created_at DESC LIMIT 10`, orgID)
 	if err != nil {
 		c.JSON(200, jwks{Keys: []jwk{}})
 		return
@@ -179,35 +180,65 @@ func OrgJWKS(c *gin.Context) {
 	defer rows.Close()
 	keys := []jwk{}
 	for rows.Next() {
+		var alg string
+		var jwkJSON json.RawMessage
 		var enc string
 		var kid string
-		if err := rows.Scan(&enc, &kid); err != nil {
+		if err := rows.Scan(&alg, &jwkJSON, &enc, &kid); err != nil {
 			continue
 		}
-		var raw []byte
-		if b, err := base64.RawURLEncoding.DecodeString(enc); err == nil {
-			raw = b
-		} else if b, err2 := base64.StdEncoding.DecodeString(enc); err2 == nil {
-			raw = b
-		} else {
-			continue
+		// Prefer stored public JWK when present
+		if len(jwkJSON) > 0 && string(jwkJSON) != "{}" {
+			var m map[string]any
+			if err := json.Unmarshal(jwkJSON, &m); err == nil {
+				// Compute kid if empty for Ed25519 from x
+				if kid == "" && fmt.Sprint(m["kty"]) == "OKP" {
+					if xStr, _ := m["x"].(string); xStr != "" {
+						if xb, err := base64.RawURLEncoding.DecodeString(xStr); err == nil {
+							sum := sha256.Sum256(xb)
+							kid = base64.RawURLEncoding.EncodeToString(sum[:8])
+						}
+					}
+				}
+				if kid != "" {
+					m["kid"] = kid
+				}
+				if fmt.Sprint(m["kty"]) == "OKP" {
+					keys = append(keys, jwk{Kty: "OKP", Crv: fmt.Sprint(m["crv"]), Alg: fmt.Sprint(m["alg"]), Use: "sig", Kid: kid, X: fmt.Sprint(m["x"])})
+					continue
+				} else if fmt.Sprint(m["kty"]) == "EC" {
+					keys = append(keys, jwk{Kty: "EC", Crv: fmt.Sprint(m["crv"]), Alg: fmt.Sprint(m["alg"]), Use: "sig", Kid: kid, X: fmt.Sprint(m["x"]), Y: fmt.Sprint(m["y"])})
+					continue
+				}
+			}
 		}
-		var priv ed25519.PrivateKey
-		switch len(raw) {
-		case ed25519.SeedSize:
-			priv = ed25519.NewKeyFromSeed(raw)
-		case ed25519.PrivateKeySize:
-			priv = ed25519.PrivateKey(raw)
-		default:
-			continue
+		// Fallback: derive EdDSA JWK from local private key if available
+		if strings.ToUpper(alg) == "EDDSA" && enc != "" {
+			var raw []byte
+			if b, err := base64.RawURLEncoding.DecodeString(enc); err == nil {
+				raw = b
+			} else if b, err2 := base64.StdEncoding.DecodeString(enc); err2 == nil {
+				raw = b
+			} else {
+				continue
+			}
+			var priv ed25519.PrivateKey
+			switch len(raw) {
+			case ed25519.SeedSize:
+				priv = ed25519.NewKeyFromSeed(raw)
+			case ed25519.PrivateKeySize:
+				priv = ed25519.PrivateKey(raw)
+			default:
+				continue
+			}
+			pub := priv.Public().(ed25519.PublicKey)
+			if kid == "" {
+				sum := sha256.Sum256(pub)
+				kid = base64.RawURLEncoding.EncodeToString(sum[:8])
+			}
+			x := base64.RawURLEncoding.EncodeToString(pub)
+			keys = append(keys, jwk{Kty: "OKP", Crv: "Ed25519", Alg: "EdDSA", Use: "sig", Kid: kid, X: x})
 		}
-		pub := priv.Public().(ed25519.PublicKey)
-		if kid == "" {
-			sum := sha256.Sum256(pub)
-			kid = base64.RawURLEncoding.EncodeToString(sum[:8])
-		}
-		x := base64.RawURLEncoding.EncodeToString(pub)
-		keys = append(keys, jwk{Kty: "OKP", Crv: "Ed25519", Alg: "EdDSA", Use: "sig", Kid: kid, X: x})
 	}
 	payload := jwks{Keys: keys}
 	if rc != nil {
@@ -254,17 +285,31 @@ func findEd25519PubByKid(kid string) (ed25519.PublicKey, error) {
 	if _, envPub, envKid := loadEd25519KeyFromEnv(); envPub != nil && envKid == kid {
 		return envPub, nil
 	}
-	// query DB by kid
-	var row struct {
-		Key string `db:"ed25519_private_key_base64"`
+	// query DB by kid (prefer jwk_pub)
+	var out struct {
+		JWK json.RawMessage `db:"jwk_pub"`
+		Key string          `db:"ed25519_private_key_base64"`
 	}
-	if err := database.DB.Get(&row, `SELECT ed25519_private_key_base64 FROM trust_keys WHERE kid=$1 AND active=true ORDER BY created_at DESC LIMIT 1`, kid); err != nil || row.Key == "" {
+	if err := database.DB.Get(&out, `SELECT jwk_pub, COALESCE(ed25519_private_key_base64,'') FROM trust_keys WHERE kid=$1 AND active=true ORDER BY created_at DESC LIMIT 1`, kid); err != nil {
+		return nil, errors.New("kid not found")
+	}
+	if len(out.JWK) > 0 && string(out.JWK) != "{}" {
+		var m map[string]any
+		if err := json.Unmarshal(out.JWK, &m); err == nil {
+			if x, _ := m["x"].(string); x != "" {
+				if b, err := base64.RawURLEncoding.DecodeString(x); err == nil && len(b) == ed25519.PublicKeySize {
+					return ed25519.PublicKey(b), nil
+				}
+			}
+		}
+	}
+	if out.Key == "" {
 		return nil, errors.New("kid not found")
 	}
 	var raw []byte
-	if b, err := base64.RawURLEncoding.DecodeString(row.Key); err == nil {
+	if b, err := base64.RawURLEncoding.DecodeString(out.Key); err == nil {
 		raw = b
-	} else if b, err2 := base64.StdEncoding.DecodeString(row.Key); err2 == nil {
+	} else if b, err2 := base64.StdEncoding.DecodeString(out.Key); err2 == nil {
 		raw = b
 	} else {
 		return nil, errors.New("invalid key encoding")

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/Armour007/aura-backend/internal/attest"
 	"github.com/Armour007/aura-backend/internal/audit"
+	kms "github.com/Armour007/aura-backend/internal/crypto"
 	"github.com/Armour007/aura-backend/internal/policy"
 	polrepo "github.com/Armour007/aura-backend/internal/policy"
 	"github.com/Armour007/aura-backend/internal/rel"
@@ -327,23 +329,51 @@ func buildTrustToken(orgID, agentID, policyID string, version int, allow bool, r
 		}
 	}
 	exp := time.Now().Add(time.Duration(ttl) * time.Second).Unix()
-	// Prefer org-scoped EdDSA (Ed25519) if configured, else env Ed25519, else fallback to HS256. Include JTI for replay prevention.
-	if priv, pub, kid := loadOrgEd25519Key(orgID); priv != nil && pub != nil {
+	// Prefer org-scoped KMS/local key if configured, else env Ed25519, else fallback to HS256. Include JTI for replay prevention.
+	// Attempt to load active trust key for org
+	var tk struct {
+		Alg  string          `db:"alg"`
+		Kid  string          `db:"kid"`
+		Prov *string         `db:"provider"`
+		Ref  *string         `db:"key_ref"`
+		Ver  *string         `db:"key_version"`
+		Cfg  json.RawMessage `db:"provider_config"`
+		Enc  *string         `db:"ed25519_private_key_base64"`
+		JWK  json.RawMessage `db:"jwk_pub"`
+	}
+	if err := database.DB.Get(&tk, `SELECT alg, COALESCE(kid,''), provider, key_ref, key_version, COALESCE(provider_config,'{}'::jsonb), ed25519_private_key_base64, COALESCE(jwk_pub,'{}'::jsonb) FROM trust_keys WHERE org_id=$1 AND active=true ORDER BY created_at DESC LIMIT 1`, orgID); err == nil && tk.Alg != "" {
 		jti := uuid.New().String()
-		header := fmt.Sprintf(`{"alg":"EdDSA","typ":"JWT","kid":"%s"}`, kid)
+		header := fmt.Sprintf(`{"alg":"%s","typ":"JWT","kid":"%s"}`, tk.Alg, tk.Kid)
 		payload := fmt.Sprintf(`{"org_id":"%s","agent_id":"%s","policy_id":"%s","policy_version":%d,"allow":%t,"reason":%q,"context_hash":"%s","trace_id":"%s","exp":%d,"jti":"%s"}`, orgID, agentID, policyID, version, allow, reason, ctxHash, traceID, exp, jti)
 		hb := base64.RawURLEncoding.EncodeToString([]byte(header))
 		pb := base64.RawURLEncoding.EncodeToString([]byte(payload))
 		unsigned := hb + "." + pb
-		sig := ed25519.Sign(priv, []byte(unsigned))
-		sb := base64.RawURLEncoding.EncodeToString(sig)
-		tok := unsigned + "." + sb
-		if os.Getenv("AURA_TRUST_JTI_WRITE") == "1" {
-			// best-effort store JTI at issuance
-			_, _ = database.DB.Exec(`INSERT INTO trust_token_jti(org_id, jti, exp_at) VALUES ($1,$2,to_timestamp($3)) ON CONFLICT DO NOTHING`, orgID, jti, exp)
+		// Local Ed25519 path
+		if (tk.Prov == nil || *tk.Prov == "" || strings.ToLower(*tk.Prov) == "local") && tk.Alg == "EdDSA" && tk.Enc != nil && *tk.Enc != "" {
+			if priv, pub, _ := loadOrgEd25519Key(orgID); priv != nil && pub != nil {
+				sig := ed25519.Sign(priv, []byte(unsigned))
+				sb := base64.RawURLEncoding.EncodeToString(sig)
+				tok := unsigned + "." + sb
+				if os.Getenv("AURA_TRUST_JTI_WRITE") == "1" {
+					_, _ = database.DB.Exec(`INSERT INTO trust_token_jti(org_id, jti, exp_at) VALUES ($1,$2,to_timestamp($3)) ON CONFLICT DO NOTHING`, orgID, jti, exp)
+				}
+				return tok
+			}
 		}
-		return tok
+		// KMS-backed signing via signer interface
+		rec := kms.TrustKeyRecord{Provider: strPtrVal(tk.Prov), KeyRef: strPtrVal(tk.Ref), KeyVersion: strPtrVal(tk.Ver), Alg: tk.Alg, Kid: tk.Kid, EncPriv: strPtrVal(tk.Enc), ProviderConfig: tk.Cfg, JWKPub: tk.JWK}
+		if signer, err := kms.NewSignerFromRecord(rec); err == nil {
+			if sig, err := signer.Sign(context.Background(), []byte(unsigned)); err == nil {
+				sb := base64.RawURLEncoding.EncodeToString(sig)
+				tok := unsigned + "." + sb
+				if os.Getenv("AURA_TRUST_JTI_WRITE") == "1" {
+					_, _ = database.DB.Exec(`INSERT INTO trust_token_jti(org_id, jti, exp_at) VALUES ($1,$2,to_timestamp($3)) ON CONFLICT DO NOTHING`, orgID, jti, exp)
+				}
+				return tok
+			}
+		}
 	}
+	// Fallbacks remain the same
 	if priv, pub, kid := loadEd25519KeyFromEnv(); priv != nil && pub != nil {
 		jti := uuid.New().String()
 		header := fmt.Sprintf(`{"alg":"EdDSA","typ":"JWT","kid":"%s"}`, kid)
@@ -382,6 +412,14 @@ func buildTrustToken(orgID, agentID, policyID string, version int, allow bool, r
 		_, _ = database.DB.Exec(`INSERT INTO trust_token_jti(org_id, jti, exp_at) VALUES ($1,$2,to_timestamp($3)) ON CONFLICT DO NOTHING`, orgID, jti, exp)
 	}
 	return tok
+}
+
+// strPtrVal safely dereferences a *string, returning empty string when nil
+func strPtrVal(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // matchesAllowed checks if s matches any of the allowed entries using simple globbing:
