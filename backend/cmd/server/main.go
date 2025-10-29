@@ -189,6 +189,8 @@ func main() {
 	}
 	coreRoutes := router.Group("/v1")
 	coreRoutes.Use(api.AttestOrAPIKeyAuthMiddleware())
+	// Optional HMAC request signing (no-op if AURA_REQUEST_HMAC_SECRET unset)
+	coreRoutes.Use(api.RequestSigningMiddleware())
 	// Apply rate limiting to core verification endpoints (env-configurable, optional Redis)
 	coreRoutes.Use(api.RateLimitMiddlewareFromEnv())
 	{
@@ -203,6 +205,7 @@ func main() {
 	// Experimental v2 verification with policy/relationship prototype
 	v2 := router.Group("/v2")
 	v2.Use(api.AttestOrAPIKeyAuthMiddleware())
+	v2.Use(api.RequestSigningMiddleware())
 	v2.Use(api.RateLimitMiddlewareFromEnv())
 	{
 		v2.POST("/verify", api.HandleVerifyV2)

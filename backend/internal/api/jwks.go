@@ -1,17 +1,32 @@
 package api
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	database "github.com/Armour007/aura-backend/internal"
+	redis "github.com/redis/go-redis/v9"
 )
+
+// getRedisFromEnv returns a Redis client if configured via AURA_REDIS_ADDR, else nil
+func getRedisFromEnvLocal() *redis.Client {
+	addr := os.Getenv("AURA_REDIS_ADDR")
+	if addr == "" {
+		return nil
+	}
+	return redis.NewClient(&redis.Options{Addr: addr, Password: os.Getenv("AURA_REDIS_PASSWORD")})
+}
 
 type jwk struct {
 	Kty string `json:"kty"`
@@ -107,6 +122,16 @@ func loadOrgEd25519Key(orgID string) (ed25519.PrivateKey, ed25519.PublicKey, str
 
 // JWKS publishes the public signing key used for trust tokens (if configured)
 func JWKS(c *gin.Context) {
+	// Try Redis cache first
+	rc := getRedisFromEnvLocal()
+	if rc != nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
+		defer cancel()
+		if b, err := rc.Get(ctx, "jwks:global").Bytes(); err == nil && len(b) > 0 {
+			c.Data(200, "application/json", b)
+			return
+		}
+	}
 	_, pub, kid := loadEd25519KeyFromEnv()
 	if pub == nil {
 		c.JSON(200, jwks{Keys: []jwk{}})
@@ -114,13 +139,38 @@ func JWKS(c *gin.Context) {
 	}
 	x := base64.RawURLEncoding.EncodeToString(pub)
 	k := jwk{Kty: "OKP", Crv: "Ed25519", Alg: "EdDSA", Use: "sig", Kid: kid, X: x}
-	c.JSON(200, jwks{Keys: []jwk{k}})
+	payload := jwks{Keys: []jwk{k}}
+	if rc != nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
+		defer cancel()
+		if jb, err := json.Marshal(payload); err == nil {
+			ttl := 10 * time.Minute
+			if v := os.Getenv("AURA_JWKS_CACHE_TTL_SECONDS"); v != "" {
+				if n, err2 := strconv.Atoi(v); err2 == nil && n > 0 {
+					ttl = time.Duration(n) * time.Second
+				}
+			}
+			_ = rc.Set(ctx, "jwks:global", jb, ttl).Err()
+		}
+	}
+	c.JSON(200, payload)
 }
 
 // OrgJWKS publishes org-scoped JWKS with all active keys for rotation overlap
 // GET /.well-known/aura/:orgId/jwks.json
 func OrgJWKS(c *gin.Context) {
 	orgID := c.Param("orgId")
+	// Redis cached response
+	rc := getRedisFromEnvLocal()
+	if rc != nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
+		defer cancel()
+		key := fmt.Sprintf("jwks:org:%s", orgID)
+		if b, err := rc.Get(ctx, key).Bytes(); err == nil && len(b) > 0 {
+			c.Data(200, "application/json", b)
+			return
+		}
+	}
 	rows, err := database.DB.Queryx(`SELECT ed25519_private_key_base64, COALESCE(kid,'') FROM trust_keys WHERE org_id=$1 AND active=true ORDER BY created_at DESC LIMIT 10`, orgID)
 	if err != nil {
 		c.JSON(200, jwks{Keys: []jwk{}})
@@ -159,7 +209,21 @@ func OrgJWKS(c *gin.Context) {
 		x := base64.RawURLEncoding.EncodeToString(pub)
 		keys = append(keys, jwk{Kty: "OKP", Crv: "Ed25519", Alg: "EdDSA", Use: "sig", Kid: kid, X: x})
 	}
-	c.JSON(200, jwks{Keys: keys})
+	payload := jwks{Keys: keys}
+	if rc != nil {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
+		defer cancel()
+		if jb, err := json.Marshal(payload); err == nil {
+			ttl := 10 * time.Minute
+			if v := os.Getenv("AURA_JWKS_CACHE_TTL_SECONDS"); v != "" {
+				if n, err2 := strconv.Atoi(v); err2 == nil && n > 0 {
+					ttl = time.Duration(n) * time.Second
+				}
+			}
+			_ = rc.Set(ctx, fmt.Sprintf("jwks:org:%s", orgID), jb, ttl).Err()
+		}
+	}
+	c.JSON(200, payload)
 }
 
 // verifyEdDSA verifies a compact JWS (header.payload.signature) using kid to locate the public key

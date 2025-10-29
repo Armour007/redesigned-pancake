@@ -3,7 +3,11 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -500,6 +504,77 @@ func getRedisFromEnv() *redis.Client {
 		return nil
 	}
 	return redis.NewClient(&redis.Options{Addr: addr, Password: os.Getenv("AURA_REDIS_PASSWORD"), DB: parseEnvInt("AURA_REDIS_DB", 0)})
+}
+
+// --- Request signing (HMAC) middleware ---
+// Validates X-Aura-Timestamp, X-Aura-Nonce, X-Aura-Signature (hex) using shared secret.
+// Prevents replay using Redis (or in-memory) nonce cache with short TTL. Enable by setting AURA_REQUEST_HMAC_SECRET.
+func RequestSigningMiddleware() gin.HandlerFunc {
+	secret := os.Getenv("AURA_REQUEST_HMAC_SECRET")
+	if secret == "" {
+		// no-op middleware
+		return func(c *gin.Context) { c.Next() }
+	}
+	rc := getRedisFromEnv()
+	ttl := time.Duration(parseEnvInt("AURA_REQUEST_HMAC_TTL_SECONDS", 300)) * time.Second // default 5m
+	if ttl <= 0 {
+		ttl = 5 * time.Minute
+	}
+	return func(c *gin.Context) {
+		ts := c.GetHeader("X-Aura-Timestamp")
+		nonce := c.GetHeader("X-Aura-Nonce")
+		sig := c.GetHeader("X-Aura-Signature")
+		if ts == "" || nonce == "" || sig == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing signing headers"})
+			return
+		}
+		// timestamp freshness
+		tsi, err := strconv.ParseInt(ts, 10, 64)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "bad timestamp"})
+			return
+		}
+		now := time.Now().Unix()
+		skew := int64(parseEnvInt("AURA_REQUEST_HMAC_MAX_SKEW_SECONDS", 300))
+		if skew <= 0 {
+			skew = 300
+		}
+		if tsi < now-skew || tsi > now+skew {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "stale timestamp"})
+			return
+		}
+		// build canonical string: method + \n + path + \n + timestamp + \n + nonce + \n + body
+		bodyBytes, _ := c.GetRawData()
+		// re-inject body so downstream can read it
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+		unsigned := strings.Join([]string{c.Request.Method, c.Request.URL.Path, ts, nonce, string(bodyBytes)}, "\n")
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write([]byte(unsigned))
+		want := hex.EncodeToString(mac.Sum(nil))
+		if !hmac.Equal([]byte(want), []byte(strings.ToLower(sig))) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
+			return
+		}
+		// replay via nonce cache
+		key := "nonce:" + nonce
+		if rc != nil {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 150*time.Millisecond)
+			defer cancel()
+			ok, _ := rc.SetNX(ctx, key, "1", ttl).Result()
+			if !ok {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "replay detected"})
+				return
+			}
+		} else {
+			if _, found := idemStore.LoadOrStore(key, struct{}{}); found {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "replay detected"})
+				return
+			}
+			// schedule cleanup
+			go func(k string) { time.Sleep(ttl); idemStore.Delete(k) }(key)
+		}
+		c.Next()
+	}
 }
 
 // IdempotencyMiddlewareFromEnv caches responses for POST requests that include Idempotency-Key header

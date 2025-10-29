@@ -1,0 +1,13 @@
+feat(protocol+frontend): multi-tenant JWKS + trust-key rotation UX
+
+- Org-scoped JWKS with multi-active keys and kid-based verification
+- Trust Keys admin UI: rotate/activate/deactivate, grace window with preview and validation, toasts, subnav tabs
+- Public registry endpoints + OpenAPI updates; rate limiting
+- JTI replay support, optional issuance-time writes
+- Backend tests for JWKS/kid; Svelte config fixes; a11y label associations
+
+fix: svelte-check and configs
+- tsconfig extends SvelteKit types; ESM Tailwind plugin import
+- silence typing in svelte.config.js and node-only gen-og script
+
+test/docs: jwks tests, openapi, UI

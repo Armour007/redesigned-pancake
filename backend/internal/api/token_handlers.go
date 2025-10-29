@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -13,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	database "github.com/Armour007/aura-backend/internal"
+	redis "github.com/redis/go-redis/v9"
 )
 
 type introspectReq struct {
@@ -39,7 +41,7 @@ func IntrospectTrustToken(c *gin.Context) {
 		c.JSON(http.StatusOK, introspectResp{Valid: false, Reason: reason})
 		return
 	}
-	// Optional JTI replay prevention when mark_used=true
+	// Optional JTI replay prevention when mark_used=true (Redis fast path, DB as durable path)
 	if req.MarkUsed {
 		// claims should include org_id (string), jti (string), exp (number)
 		orgID, _ := claims["org_id"].(string)
@@ -59,11 +61,24 @@ func IntrospectTrustToken(c *gin.Context) {
 			c.JSON(http.StatusOK, introspectResp{Valid: false, Reason: "missing org_id/jti/exp"})
 			return
 		}
-		// try to insert; if conflict, mark as replay
-		res, err := database.DB.Exec(`INSERT INTO trust_token_jti(org_id, jti, exp_at) VALUES ($1,$2, to_timestamp($3)) ON CONFLICT DO NOTHING`, orgID, jti, expUnix)
-		if err == nil {
+		// Redis SETNX with TTL until exp for immediate replay detection
+		if addr := os.Getenv("AURA_REDIS_ADDR"); addr != "" {
+			rc := redis.NewClient(&redis.Options{Addr: addr, Password: os.Getenv("AURA_REDIS_PASSWORD")})
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
+			defer cancel()
+			key := "jti:" + orgID + ":" + jti
+			ttl := time.Until(time.Unix(expUnix, 0))
+			if ttl < 0 {
+				ttl = 0
+			}
+			if ok, _ := rc.SetNX(ctx, key, "1", ttl).Result(); !ok {
+				c.JSON(http.StatusOK, introspectResp{Valid: false, Reason: "replayed"})
+				return
+			}
+		}
+		// Insert into DB as durable record; if conflict then replay
+		if res, err := database.DB.Exec(`INSERT INTO trust_token_jti(org_id, jti, exp_at) VALUES ($1,$2, to_timestamp($3)) ON CONFLICT DO NOTHING`, orgID, jti, expUnix); err == nil {
 			if n, _ := res.RowsAffected(); n == 0 {
-				// already present -> replay
 				c.JSON(http.StatusOK, introspectResp{Valid: false, Reason: "replayed"})
 				return
 			}
