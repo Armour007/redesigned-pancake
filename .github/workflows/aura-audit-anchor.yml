@@ -1,0 +1,57 @@
+name: Aura - Daily Audit Anchor
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  anchor:
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_BASE_URL: ${{ secrets.AURA_BACKEND_BASE_URL }}
+      AURA_API_KEY: ${{ secrets.AURA_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Check inputs
+        run: |
+          if [ -z "$BACKEND_BASE_URL" ] || [ -z "$AURA_API_KEY" ]; then
+            echo "BACKEND_BASE_URL and AURA_API_KEY secrets are required" >&2
+            exit 1
+          fi
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Fetch latest audit hash
+        id: fetch
+        run: |
+          resp=$(curl -sS -H "X-API-Key: $AURA_API_KEY" "$BACKEND_BASE_URL/v2/audit/ledger?limit=1")
+          echo "$resp" | jq . >/dev/null 2>&1 || { echo "Invalid JSON from ledger" >&2; echo "$resp"; exit 1; }
+          HASH=$(echo "$resp" | jq -r '.items[0].this_hash // empty')
+          if [ -z "$HASH" ]; then
+            echo "No audit items found; skipping anchor"; echo "skip=true" >> $GITHUB_OUTPUT; exit 0
+          fi
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "skip=false" >> $GITHUB_OUTPUT
+      - name: Publish Gist (optional)
+        if: steps.fetch.outputs.skip == 'false'
+        id: gist
+        env:
+          HASH: ${{ steps.fetch.outputs.hash }}
+        run: |
+          if [ -z "$GITHUB_TOKEN" ]; then
+            echo "No GITHUB_TOKEN; skipping gist publish"
+            exit 0
+          fi
+          payload=$(jq -n --arg content "$HASH" '{public:true, files:{"aura-audit-root.txt":{content:$content}}}')
+          r=$(curl -sS -H "Authorization: Bearer $GITHUB_TOKEN" -H "Content-Type: application/json" -d "$payload" https://api.github.com/gists)
+          url=$(echo "$r" | jq -r '.html_url // empty')
+          echo "url=$url" >> $GITHUB_OUTPUT
+      - name: Set anchor in backend
+        if: steps.fetch.outputs.skip == 'false'
+        env:
+          HASH: ${{ steps.fetch.outputs.hash }}
+          GIST_URL: ${{ steps.gist.outputs.url }}
+        run: |
+          DATE=$(date -u +%F)
+          body=$(jq -n --arg rh "$HASH" --arg url "$GIST_URL" --arg d "$DATE" '{root_hash:$rh, external_ref: ( $url // null ), date:$d}')
+          curl -sS -X POST -H "X-API-Key: $AURA_API_KEY" -H "Content-Type: application/json" -d "$body" "$BACKEND_BASE_URL/v2/audit/anchor" -o /dev/stderr -w "\n%{http_code}\n"

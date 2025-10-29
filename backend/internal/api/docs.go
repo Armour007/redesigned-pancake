@@ -105,6 +105,13 @@ func OpenAPIJSON(c *gin.Context) {
 			},
 		},
 		"paths": map[string]any{
+			"/auth/attest": map[string]any{
+				"post": map[string]any{
+					"summary":     "Mint short-lived attestation JWT (requires X-SPIFFE-ID)",
+					"requestBody": map[string]any{"required": true, "content": map[string]any{"application/json": map[string]any{"schema": map[string]any{"type": "object", "properties": map[string]any{"org_id": map[string]any{"type": "string", "format": "uuid"}, "agent_id": map[string]any{"type": "string", "format": "uuid"}}}}}},
+					"responses":   map[string]any{"200": map[string]any{"description": "OK"}, "400": map[string]any{"description": "Bad Request"}},
+				},
+			},
 			"/auth/register": map[string]any{
 				"post": map[string]any{
 					"summary":     "Register user",
@@ -121,8 +128,8 @@ func OpenAPIJSON(c *gin.Context) {
 			},
 			"/v1/verify": map[string]any{
 				"post": map[string]any{
-					"summary":     "Verify authorization (API key auth)",
-					"security":    []any{map[string]any{"apiKeyAuth": []any{}}},
+					"summary":     "Verify authorization (attestation or API key)",
+					"security":    []any{map[string]any{"apiKeyAuth": []any{}}, map[string]any{"bearerAuth": []any{}}},
 					"parameters":  []any{map[string]any{"$ref": "#/components/parameters/AURAVersion"}},
 					"requestBody": map[string]any{"required": true, "content": map[string]any{"application/json": map[string]any{"schema": map[string]any{"$ref": "#/components/schemas/VerifyRequest"}}}},
 					"responses":   map[string]any{"200": map[string]any{"description": "OK", "content": map[string]any{"application/json": map[string]any{"schema": map[string]any{"$ref": "#/components/schemas/VerifyResponse"}}}}, "401": map[string]any{"description": "Unauthorized"}},

@@ -2,6 +2,7 @@
   import { API_BASE } from '$lib/api';
   export let data: { me: any; org: any; error?: string };
   import Alert from '$lib/components/Alert.svelte';
+  import { onMount } from 'svelte';
 
   let full_name = data?.me?.full_name || '';
   let org_name = data?.org?.name || '';
@@ -10,6 +11,11 @@
   let savingProfile = false, savingOrg = false, savingPassword = false;
   let successMessage = '';
   let errorMessage = '';
+  let orgId: string | null = null;
+
+  onMount(() => {
+    try { orgId = localStorage.getItem('aura_org_id'); } catch {}
+  });
 
   async function saveProfile() {
     successMessage = '';
@@ -131,5 +137,23 @@
         {savingOrg ? 'Saving…' : 'Save organization'}
       </button>
     </div>
+  </section>
+
+  <section class="bg-[#151515] rounded-lg border border-white/10 p-6 xl:col-span-2">
+    <h2 class="text-xl font-semibold mb-4">Organization admin</h2>
+    {#if orgId}
+      <div class="grid sm:grid-cols-2 gap-4">
+        <a class="block p-4 rounded border border-white/10 hover:bg-white/5" href={`/organizations/${orgId}/webhooks`}>
+          <div class="font-medium">Webhook endpoints</div>
+          <div class="text-sm text-gray-400 mt-1">Manage outbound webhooks for your org.</div>
+        </a>
+        <a class="block p-4 rounded border border-white/10 hover:bg-white/5" href={`/organizations/${orgId}/trust-keys`}>
+          <div class="font-medium">Trust keys (JWKS)</div>
+          <div class="text-sm text-gray-400 mt-1">Rotate and manage Ed25519 trust keys.</div>
+        </a>
+      </div>
+    {:else}
+      <div class="text-gray-400 text-sm">No organization selected.</div>
+    {/if}
   </section>
 </div>

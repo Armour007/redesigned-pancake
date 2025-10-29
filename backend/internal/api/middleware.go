@@ -154,6 +154,107 @@ func ApiKeyAuthMiddleware() gin.HandlerFunc {
 	}
 }
 
+// AttestOrAPIKeyAuthMiddleware accepts either an attestation Bearer JWT (preferred) or an API key.
+// If the organization has api_keys_disabled=true, API key auth is rejected.
+// On success, sets orgID and optionally agentID; also sets authKind in context: "attest" or "apikey".
+func AttestOrAPIKeyAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		auth := c.GetHeader("Authorization")
+		if auth != "" {
+			parts := strings.SplitN(auth, " ", 2)
+			if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+				tokenString := parts[1]
+				// Prefer AURA_ATTEST_SIGNING_KEY, fallback to JWT_SECRET
+				key := os.Getenv("AURA_ATTEST_SIGNING_KEY")
+				if key == "" {
+					key = os.Getenv("JWT_SECRET")
+				}
+				if key == "" {
+					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "no signing key configured"})
+					return
+				}
+				token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+					if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+						return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+					}
+					return []byte(key), nil
+				})
+				if err == nil && token != nil && token.Valid {
+					if claims, ok := token.Claims.(jwt.MapClaims); ok {
+						// require kind==attest
+						if k, ok2 := claims["kind"].(string); ok2 && k == "attest" {
+							orgID, _ := claims["org_id"].(string)
+							agentID, _ := claims["agent_id"].(string)
+							if orgID == "" {
+								c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing org in token"})
+								return
+							}
+							c.Set("orgID", orgID)
+							if agentID != "" {
+								c.Set("agentID", agentID)
+							}
+							c.Set("authKind", "attest")
+							c.Next()
+							return
+						}
+					}
+				}
+				// If Bearer present but invalid, reject immediately
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid attestation token"})
+				return
+			}
+		}
+		// Fallback to API key auth
+		raw := c.GetHeader("X-API-Key")
+		if raw == "" {
+			if auth != "" {
+				parts := strings.SplitN(auth, " ", 2)
+				if len(parts) == 2 && strings.EqualFold(parts[0], "AURA") {
+					raw = parts[1]
+				}
+			}
+		}
+		if raw == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "API key or attestation token required"})
+			return
+		}
+		const prefix = "aura_sk_"
+		if !strings.HasPrefix(raw, prefix) || len(raw) <= len(prefix)+8 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid API key format"})
+			return
+		}
+		randomPart := raw[len(prefix):]
+		keyPrefix := randomPart[:8]
+		var keyRec database.APIKey
+		if err := database.DB.Get(&keyRec, `SELECT id, organization_id, name, key_prefix, hashed_key, created_by_user_id, last_used_at, expires_at, created_at FROM api_keys WHERE key_prefix=$1 AND revoked_at IS NULL LIMIT 1`, keyPrefix); err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "API key not found or revoked"})
+			return
+		}
+		// Enforce org setting: api_keys_disabled
+		var disabled bool
+		if err := database.DB.Get(&disabled, `SELECT api_keys_disabled FROM organizations WHERE id=$1`, keyRec.OrganizationID); err == nil && disabled {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "API keys disabled for this organization"})
+			return
+		}
+		if keyRec.ExpiresAt != nil && time.Now().After(*keyRec.ExpiresAt) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "API key expired"})
+			return
+		}
+		if err := bcrypt.CompareHashAndPassword([]byte(keyRec.HashedKey), []byte(raw)); err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid API key"})
+			return
+		}
+		now := time.Now()
+		_, _ = database.DB.Exec(`UPDATE api_keys SET last_used_at=$1 WHERE id=$2`, now, keyRec.ID)
+		RecordAPIKeyUsage(keyPrefix, keyRec.OrganizationID.String())
+		c.Set("orgID", keyRec.OrganizationID.String())
+		c.Set("apiKeyPrefix", keyPrefix)
+		c.Set("apiKeyID", keyRec.ID.String())
+		c.Set("authKind", "apikey")
+		c.Next()
+	}
+}
+
 // RequestIDMiddleware ensures every request has an X-Request-ID. If absent, generate one.
 func RequestIDMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -279,6 +380,51 @@ func RateLimitMiddlewareFromEnv() gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
 		defer cancel()
 
+		if err := rc.Ping(ctx).Err(); err != nil {
+			RateLimitMiddleware(rpm)(c)
+			return
+		}
+		n, err := rc.Incr(ctx, key).Result()
+		if err != nil {
+			RateLimitMiddleware(rpm)(c)
+			return
+		}
+		_ = rc.Expire(ctx, key, 61*time.Second).Err()
+		if int(n) > rpm {
+			c.Header("Retry-After", "60")
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "Rate limit exceeded. Try again later."})
+			return
+		}
+		c.Next()
+	}
+}
+
+// RateLimitPublicMiddlewareFromEnv is a variant for public endpoints (JWKS/registry) with its own env var AURA_PUBLIC_RPM (default 120)
+func RateLimitPublicMiddlewareFromEnv() gin.HandlerFunc {
+	rpm := 120
+	if v := os.Getenv("AURA_PUBLIC_RPM"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			rpm = n
+		}
+	}
+	addr := os.Getenv("AURA_REDIS_ADDR")
+	if addr == "" {
+		return RateLimitMiddleware(rpm)
+	}
+	rc := redis.NewClient(&redis.Options{
+		Addr:     addr,
+		Password: os.Getenv("AURA_REDIS_PASSWORD"),
+		DB:       parseEnvInt("AURA_REDIS_DB", 0),
+	})
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		if net.ParseIP(ip) == nil {
+			ip = "unknown"
+		}
+		now := time.Now().UTC()
+		key := fmt.Sprintf("rlpub:%s:%04d%02d%02d%02d%02d", ip, now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute())
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
+		defer cancel()
 		if err := rc.Ping(ctx).Err(); err != nil {
 			RateLimitMiddleware(rpm)(c)
 			return

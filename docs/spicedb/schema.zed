@@ -1,0 +1,25 @@
+definition user {}
+
+definition agent {}
+
+definition team {
+  relation member: user | agent | team
+}
+
+definition org {
+  relation member: user | agent | team
+}
+
+definition resource {
+  relation owner: user | agent | team | org
+  relation editor: user | agent | team | org
+  relation viewer: user | agent | team | org
+
+  permission editor = editor + owner
+  permission viewer = viewer + editor + owner
+}
+
+definition delegation {
+  // optional namespace to model explicit delegations like agent can_act_for user or org
+  relation can_act_for: user | org
+}

@@ -134,3 +134,15 @@ Backend hardening via env:
 - `AURA_CORS_ORIGINS` (comma-separated)
 - `AURA_TRUSTED_PROXIES` (comma-separated)
 - Rate limiting: `AURA_V1_VERIFY_RPM` and optional Redis `AURA_REDIS_ADDR`
+
+## Optional: SpiceDB for Trust Graph
+
+You can run AURA's Trust Graph using the default local SQL backend or switch to SpiceDB.
+
+- See `docs/SPICEDB.md` for a quick start (Docker run, schema apply, and env to enable).
+- Build with SpiceDB support using Go build tags: `go build -tags=spicedb ./...`
+- Enable via env:
+	- `AURA_REL_BACKEND=spicedb`
+	- `AURA_SPICEDB_ENDPOINT` (e.g., `localhost:50051`)
+	- `AURA_SPICEDB_TOKEN` (e.g., `dev-secret`)
+	- Optional caches: `AURA_REL_CACHE_TTL_MS` and `AURA_REL_NEG_CACHE_TTL_MS`

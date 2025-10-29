@@ -92,6 +92,15 @@
 			"isBackground": true,
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "Backend: run unit tests api jwks",
+			"type": "shell",
+			"command": "go test ./internal/api -run ^Test(OrgJWKS|VerifyEdDSA)_ -v",
+			"args": [],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
 		}
 	]
 }

@@ -1,0 +1,45 @@
+name: AURA Policy Activate
+
+on:
+  workflow_dispatch:
+    inputs:
+      simulate_context:
+        description: 'Simulation context JSON for gating activation'
+        required: true
+      version:
+        description: 'Policy version to activate (optional: defaults to latest)'
+        required: false
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PowerShell
+        uses: PowerShell/PowerShell@v1
+
+      - name: Simulate and Activate
+        shell: pwsh
+        env:
+          AURA_API_BASE_URL: ${{ secrets.AURA_API_BASE_URL }}
+          AURA_API_KEY: ${{ secrets.AURA_API_KEY }}
+          ORG_ID: ${{ secrets.AURA_ORG_ID }}
+          POLICY_ID: ${{ secrets.AURA_POLICY_ID }}
+        run: |
+          $headers = @{ 'X-API-Key' = "$env:AURA_API_KEY"; 'Content-Type' = 'application/json' }
+          # Get version
+          if (-not ${{ github.event.inputs.version }}) {
+            $vers = Invoke-RestMethod -Method Get -Uri "$env:AURA_API_BASE_URL/organizations/$env:ORG_ID/policies/$env:POLICY_ID/versions" -Headers $headers
+            $version = ($vers | Sort-Object -Property version -Descending | Select-Object -First 1).version
+          } else {
+            $version = [int]${{ github.event.inputs.version }}
+          }
+          Write-Host "Simulating version $version..."
+          $simBody = @{ request_context = (${{ github.event.inputs.simulate_context }}) | ConvertFrom-Json } | ConvertTo-Json -Depth 99
+          $res = Invoke-RestMethod -Method Post -Uri "$env:AURA_API_BASE_URL/organizations/$env:ORG_ID/policies/$env:POLICY_ID/versions/$version/simulate" -Headers $headers -Body $simBody
+          if (-not $res.allow) { throw "Simulation failed: $($res.reason)" }
+          Write-Host "Simulation allowed; activating..."
+          Invoke-RestMethod -Method Post -Uri "$env:AURA_API_BASE_URL/organizations/$env:ORG_ID/policies/$env:POLICY_ID/versions/$version/activate" -Headers $headers -Body '{}' | Out-Null
+          Write-Host "Activated policy version $version"

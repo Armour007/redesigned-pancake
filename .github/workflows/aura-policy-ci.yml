@@ -1,0 +1,29 @@
+name: AURA Policy CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'policies/**'
+      - '.github/workflows/aura-policy-ci.yml'
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PowerShell
+        uses: PowerShell/PowerShell@v1
+
+      - name: Run sample policy pipeline
+        shell: pwsh
+        env:
+          AURA_API_BASE_URL: ${{ secrets.AURA_API_BASE_URL }}
+          AURA_API_KEY: ${{ secrets.AURA_API_KEY }}
+          ORG_ID: ${{ secrets.AURA_ORG_ID }}
+          POLICY_ID: ${{ secrets.AURA_POLICY_ID }}
+        run: |
+          ./scripts/ci/sample-policy-approve.ps1 -BaseUrl $env:AURA_API_BASE_URL -ApiKey $env:AURA_API_KEY -OrgId $env:ORG_ID -PolicyId $env:POLICY_ID -PolicyFile './policies/policy.json'

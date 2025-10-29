@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { API_BASE } from '$lib/api';
+  import OrgAdminTabs from '$lib/components/OrgAdminTabs.svelte';
 
   type Endpoint = { id: string; url: string; description?: string };
   let endpoints: Endpoint[] = [];
@@ -9,6 +10,10 @@
   let error: string | null = null;
 
   let focusId: string | null = null;
+
+  // derive current orgId and path from $page store for template use
+  $: currentOrgId = $page.params.orgId;
+  $: currentPath = $page.url.pathname;
 
   function authHeaders() {
     const token = localStorage.getItem('aura_token') || '';
@@ -43,6 +48,8 @@
 </script>
 
 <div class="space-y-4">
+  <!-- Org admin subnav (2-tab style) -->
+  <OrgAdminTabs orgId={currentOrgId} />
   <div class="flex items-center justify-between">
     <h1 class="text-lg font-semibold">Webhook Endpoints</h1>
     <button disabled={loading} on:click={load} class="px-3 py-2 rounded bg-white/10 hover:bg-white/20 disabled:opacity-50">Refresh</button>

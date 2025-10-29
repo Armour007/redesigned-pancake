@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import '../../app.css';// Import Tailwind
   import { API_BASE } from '$lib/api';
+  import ToastHost from '$lib/components/ToastHost.svelte';
 
   // Simple check on mount if the token exists.
   // A more robust solution would use hooks or a dedicated auth store.
@@ -148,6 +149,7 @@
     <main class="flex-1 p-8">
       <slot /> <!-- Page content goes here -->
     </main>
+    <ToastHost />
   </div>
 </div>
 

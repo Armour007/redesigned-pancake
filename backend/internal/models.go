@@ -23,11 +23,12 @@ type Agent struct {
 
 // Organization represents the 'organizations' table
 type Organization struct {
-	ID        uuid.UUID `db:"id"`
-	Name      string    `db:"name"`
-	OwnerID   uuid.UUID `db:"owner_id"`
-	CreatedAt time.Time `db:"created_at"`
-	UpdatedAt time.Time `db:"updated_at"`
+	ID              uuid.UUID `db:"id"`
+	Name            string    `db:"name"`
+	OwnerID         uuid.UUID `db:"owner_id"`
+	ApiKeysDisabled bool      `db:"api_keys_disabled"`
+	CreatedAt       time.Time `db:"created_at"`
+	UpdatedAt       time.Time `db:"updated_at"`
 }
 
 // OrganizationMember represents the 'organization_members' table
@@ -84,4 +85,61 @@ type WebhookEndpoint struct {
 	Secret         string    `db:"secret"`
 	IsActive       bool      `db:"is_active"`
 	CreatedAt      time.Time `db:"created_at"`
+}
+
+// Policy entities (DB-backed)
+type Policy struct {
+	ID         uuid.UUID  `db:"id"`
+	OrgID      uuid.UUID  `db:"org_id"`
+	Name       string     `db:"name"`
+	EngineType string     `db:"engine_type"`
+	CreatedBy  *uuid.UUID `db:"created_by_user_id"`
+	CreatedAt  time.Time  `db:"created_at"`
+}
+
+type PolicyVersion struct {
+	ID          uuid.UUID       `db:"id"`
+	PolicyID    uuid.UUID       `db:"policy_id"`
+	Version     int             `db:"version"`
+	Body        json.RawMessage `db:"body"`
+	Compiled    []byte          `db:"compiled_blob"`
+	Checksum    *string         `db:"checksum"`
+	Status      string          `db:"status"`
+	CreatedBy   *uuid.UUID      `db:"created_by_user_id"`
+	CreatedAt   time.Time       `db:"created_at"`
+	ApprovedBy  *uuid.UUID      `db:"approved_by_user_id"`
+	ApprovedAt  *time.Time      `db:"approved_at"`
+	ActivatedAt *time.Time      `db:"activated_at"`
+}
+
+type PolicyAssignment struct {
+	ID        uuid.UUID `db:"id"`
+	PolicyID  uuid.UUID `db:"policy_id"`
+	ScopeType string    `db:"scope_type"`
+	ScopeID   string    `db:"scope_id"`
+	CreatedAt time.Time `db:"created_at"`
+}
+
+type TrustTuple struct {
+	ID          int64            `db:"id"`
+	ObjectType  string           `db:"object_type"`
+	ObjectID    string           `db:"object_id"`
+	Relation    string           `db:"relation"`
+	SubjectType string           `db:"subject_type"`
+	SubjectID   string           `db:"subject_id"`
+	CaveatJSON  *json.RawMessage `db:"caveat_json"`
+	CreatedAt   time.Time        `db:"created_at"`
+}
+
+type DecisionTrace struct {
+	ID            int64           `db:"id"`
+	OrgID         uuid.UUID       `db:"org_id"`
+	TraceID       string          `db:"trace_id"`
+	PolicyID      *uuid.UUID      `db:"policy_id"`
+	PolicyVersion *int            `db:"policy_version"`
+	AgentID       *uuid.UUID      `db:"agent_id"`
+	Allow         bool            `db:"allow"`
+	Reason        *string         `db:"reason"`
+	Trace         json.RawMessage `db:"trace"`
+	CreatedAt     time.Time       `db:"created_at"`
 }
