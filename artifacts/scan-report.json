@@ -1,0 +1,58 @@
+{
+  "generated_at": "2025-10-30T00:00:00Z",
+  "step": "Step 0 - Full Repo Scan",
+  "file_index": {
+    "total_files": 15866,
+    "large_files_note": "Top entries over 1MB; many are node_modules or build artifacts.",
+    "large_files_sample": [
+      { "path": "backend/server.exe", "size_bytes": 73447424 },
+      { "path": "frontend/node_modules/@img/sharp-win32-x64/lib/libvips-42.dll", "size_bytes": 18956288 },
+      { "path": "frontend/node_modules/typescript/lib/typescript.js", "size_bytes": 9112572 }
+    ]
+  },
+  "tests": {
+    "backend": {
+      "command": "cd backend && go test ./... -coverprofile=coverage.out",
+      "summary": "Some packages ok; low coverage (api ~4.1%, rel ~15.6%).",
+      "notes": "coverage.out written under backend/."
+    },
+    "frontend": {
+      "vitest": {
+        "command": "cd frontend && npm ci && npm run test",
+        "result": "PASS (8 tests, 3 files)",
+        "notes": "Vitest browser mode stable; MSW replaced by centralized fetch mock"
+      },
+      "playwright": {
+        "command": "cd frontend && npx playwright test",
+        "result": "FAIL (preview webServer startup error: @sveltejs/kit 'internal' subpath not exported)",
+        "error": "Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath './internal' is not defined by exports in @sveltejs/kit"
+      }
+    }
+  },
+  "linters": {
+    "golangci_lint": {
+      "command": "golangci-lint run",
+      "result": "NOT_INSTALLED"
+    },
+    "gosec": {
+      "command": "gosec ./...",
+      "result": "NOT_INSTALLED"
+    },
+    "eslint": {
+      "command": "npm run lint",
+      "result": "FAIL",
+      "errors_sample": [
+        "@typescript-eslint/no-explicit-any in multiple files",
+        "svelte/no-at-html-tags in blog and customers pages",
+        "unused vars across routes and components"
+      ]
+    }
+  },
+  "dev_stack": {
+    "docker_compose_dev": {
+      "command": "docker compose -f docker-compose.dev.yml up -d",
+      "result": "FAIL - frontend stage COPY /app/build not found",
+      "health": "HEALTHCHECK_FAILED (backend not ready)"
+    }
+  }
+}
