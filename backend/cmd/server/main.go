@@ -456,6 +456,13 @@ func main() {
 	// Public signed download for generated SDKs (no auth) when signed URL is present
 	router.GET("/sdk/public/download-generated/:jobId", api.DownloadGeneratedSDKPublic)
 
+	// Identities (AURA-ID) - v1 convenience aliases
+	coreRoutes.POST("/identities", api.CreateAuraID)
+	coreRoutes.GET("/identities/:id", api.GetAuraID)
+	// Trust Tokens (issue/verify/revoke)
+	coreRoutes.POST("/token/issue", api.IssueTrustTokenV1)
+	coreRoutes.POST("/token/verify", api.VerifyTrustTokenV1)
+	coreRoutes.POST("/token/revoke", api.RevokeTrustTokenV1)
 	// SDK utilities (protected): download curated SDK bundles
 	// These endpoints require user authentication
 	// Example: GET /sdk/download?lang=node|python|go
