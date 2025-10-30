@@ -15,10 +15,12 @@ const (
 
 // Decision is the outcome of evaluation
 type Decision struct {
-	Allow   bool   `json:"allow"`
-	Reason  string `json:"reason,omitempty"`
-	TraceID string `json:"trace_id,omitempty"`
-	Trace   *Trace `json:"trace,omitempty"`
+	Allow           bool     `json:"allow"`
+	Reason          string   `json:"reason,omitempty"`
+	TraceID         string   `json:"trace_id,omitempty"`
+	Trace           *Trace   `json:"trace,omitempty"`
+	RequireApproval bool     `json:"require_approval,omitempty"`
+	Hints           []string `json:"hints,omitempty"`
 }
 
 // Trace captures explainability details

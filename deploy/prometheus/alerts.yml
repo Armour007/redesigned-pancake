@@ -22,6 +22,32 @@ groups:
           summary: p95 latency > 1s
           description: HTTP p95 latency exceeded 1s over 10m.
 
+      - alert: VerifyErrorRatioHigh
+        expr: |
+          sum(rate(aura_http_requests_total{path="/v1/verify",status=~"5.."}[10m]))
+            /
+          sum(rate(aura_http_requests_total{path="/v1/verify"}[10m]))
+          > 0.01
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: Verify error ratio > 1%
+          description: Error rate for /v1/verify above 1% over 10m.
+
+      - alert: JWKSCacheHitLow
+        expr: |
+          sum(rate(aura_cache_hit_total{component="jwks"}[10m]))
+            /
+          (sum(rate(aura_cache_hit_total{component="jwks"}[10m])) + sum(rate(aura_cache_miss_total{component="jwks"}[10m])))
+          < 0.8
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: JWKS cache hit ratio < 80%
+          description: JWKS cache effectiveness degraded below 80%.
+
       - alert: ExternalErrorRateHigh
         expr: |
           sum(rate(aura_external_op_total{outcome="error"}[5m])) by (op)

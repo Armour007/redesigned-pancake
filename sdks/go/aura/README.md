@@ -56,3 +56,39 @@ import "github.com/Armour007/aura/sdks/go/aura"
 ```
 
 Optionally, use go.work or replace directives if developing locally.
+
+## Offline Trust Tokens
+
+Verify short-lived trust tokens locally using JWKS and optional revocation sync. Supported algorithms: EdDSA (Ed25519) and ES256. HS256 is not supported for offline verification.
+
+- Expiration is enforced with an optional grace window.
+- Revocations are fetched from `/organizations/{orgId}/trust-tokens/revocations` with ETag so repeated calls are cheap (304).
+- Use `TrustCache` to cache JWKS and revocations with TTLs to reduce network calls.
+
+Example with cache:
+
+```go
+ctx := context.Background()
+cache := aura.NewTrustCache(5*time.Minute, 1*time.Minute)
+res, err := aura.VerifyTrustTokenOfflineCached(ctx, cache, baseURL, token, orgId, 10)
+if err != nil { /* handle */ }
+if !res.Valid { /* reason in res.Reason */ }
+// use res.Claims
+```
+
+See `examples/offline_verify/main.go` for a runnable snippet.
+
+### Local evaluator middleware (offline)
+
+Use the built-in net/http middleware to enforce trust tokens offline in your edge service:
+
+```go
+cache := aura.NewTrustCache(5*time.Minute, 1*time.Minute)
+mux := http.NewServeMux()
+mux.Handle("/secure",
+	aura.TrustTokenMiddleware(baseURL, orgId, cache, 30)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
+		claims := r.Context().Value(struct{ k string }{"auraClaims"})
+		_ = claims
+		w.Write([]byte("ok"))
+	})))
+```

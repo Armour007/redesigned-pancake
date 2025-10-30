@@ -73,3 +73,67 @@ async def webhook(request: Request, aura_signature: str = Header(None)):
 - AURA_API_BASE_URL (or AURA_API_BASE): Backend base URL (default http://localhost:8081)
 - AURA_VERSION: Optional API version header (default `2025-10-01`)
 - AURA_WEBHOOK_SECRET: For verifying webhook signatures
+
+## Offline Trust Tokens
+
+Verify short-lived trust tokens locally using JWKS and optional revocation sync. Supported algorithms: EdDSA (Ed25519) and ES256. HS256 is not supported offline.
+
+- Exp enforced with optional grace window
+- Revocations fetched from `/organizations/{orgId}/trust-tokens/revocations` with ETag for cheap refresh
+- Use `TrustCaches` to cache JWKS and revocations with TTLs
+
+Example:
+
+```python
+from aura_sdk import verify_trust_token_offline, TrustCaches
+
+cache = TrustCaches(jwks_ttl=300, rev_ttl=60)
+res = verify_trust_token_offline(token, base_url=base_url, org_id=org_id, grace_seconds=10, cache=cache)
+if not res.get('valid'):
+    print('invalid', res.get('reason'))
+else:
+    print('claims', res.get('claims'))
+```
+
+See `examples/offline_verify.py` for a runnable snippet.
+
+## Verify VC (JSON-LD, JsonWebSignature2020)
+
+Verify a Verifiable Credential with a JSON-LD linked data proof (URDNA2015 + detached JWS with b64=false):
+
+```python
+from aura_sdk import verify_vc_ldp
+
+# vc is the VC JSON object (including the `proof` field with `jws` detached signature)
+res = verify_vc_ldp(vc, base_url=os.environ.get('AURA_API_BASE_URL'), expected_org_id="<org-uuid>", expected_owner="alice")
+if not res.get('valid'):
+    print('invalid', res.get('reason'))
+```
+
+The helper normalizes the VC using URDNA2015, resolves the DID Document via `/resolve`, and verifies the detached JWS for EdDSA (Ed25519) or ES256 against the referenced verification method.
+
+## Local evaluator (FastAPI middleware)
+
+Enforce trust tokens offline at the edge using a simple middleware and the built-in caches:
+
+```python
+from fastapi import FastAPI
+from aura_sdk import verify_trust_token_offline, TrustCaches
+
+app = FastAPI()
+cache = TrustCaches(jwks_ttl=300, rev_ttl=60)
+
+@app.middleware('http')
+async def trust_token_offline(request, call_next):
+    auth = request.headers.get('authorization')
+    token = auth.split(' ', 1)[1] if auth and auth.lower().startswith('bearer ') else auth
+    if not token:
+        from fastapi import Response
+        return Response(status_code=401, content='{"error":"missing_token"}', media_type='application/json')
+    _ = cache.get_revocations('http://localhost:8081', '<org-id>')
+    res = verify_trust_token_offline(token, base_url='http://localhost:8081', org_id='<org-id>', grace_seconds=30, cache=cache)
+    if not res.get('valid'):
+        from fastapi import Response
+        return Response(status_code=401, content='{"error":"invalid_token"}', media_type='application/json')
+    return await call_next(request)
+```

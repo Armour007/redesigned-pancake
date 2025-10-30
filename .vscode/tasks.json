@@ -101,6 +101,53 @@
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "SDK: codegen smoke",
+			"type": "shell",
+			"command": "powershell -NoProfile -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/sdk-codegen-smoke.ps1",
+			"group": "test"
+		},
+		{
+			"label": "Signed: download smoke",
+			"type": "shell",
+			"command": "powershell -NoProfile -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/signed-download-smoke.ps1",
+			"group": "test"
+		},
+		{
+			"label": "Backend: go run :8081 (jwt)",
+			"type": "shell",
+			"command": "go run ./cmd/server",
+			"args": [],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "Backend: go run :8081 (jwt)",
+			"type": "shell",
+			"command": "go run ./cmd/server",
+			"args": [],
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Backend: go run :8081 (jwt)",
+			"type": "shell",
+			"command": "go run ./cmd/server",
+			"isBackground": true
+		},
+		{
+			"label": "Backend: go run :8081 (jwt)",
+			"type": "shell",
+			"command": "go run ./cmd/server",
+			"isBackground": true
+		},
+		{
+			"label": "Backend: go run :8081 (local-db)",
+			"type": "shell",
+			"command": "go run ./cmd/server",
+			"isBackground": true
 		}
 	]
 }

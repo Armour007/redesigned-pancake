@@ -17,10 +17,36 @@ spec:
         app.kubernetes.io/name: {{ include "aura.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      {{- if .Values.securityContext.enabled }}
+      securityContext:
+        {{- if .Values.securityContext.pod.runAsNonRoot }}
+        runAsNonRoot: {{ .Values.securityContext.pod.runAsNonRoot }}
+        {{- end }}
+        {{- with .Values.securityContext.pod.seccompProfile }}
+        seccompProfile:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      {{- end }}
       containers:
         - name: backend
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if and .Values.securityContext.enabled .Values.securityContext.container.enabled }}
+          securityContext:
+            {{- if .Values.securityContext.container.allowPrivilegeEscalation }}
+            allowPrivilegeEscalation: {{ .Values.securityContext.container.allowPrivilegeEscalation }}
+            {{- else }}
+            allowPrivilegeEscalation: false
+            {{- end }}
+            {{- if .Values.securityContext.container.dropAllCapabilities }}
+            capabilities:
+              drop:
+                - ALL
+            {{- end }}
+            {{- if .Values.securityContext.container.readOnlyRootFilesystem }}
+            readOnlyRootFilesystem: {{ .Values.securityContext.container.readOnlyRootFilesystem }}
+            {{- end }}
+          {{- end }}
           ports:
             - containerPort: {{ .Values.service.port }}
               name: http

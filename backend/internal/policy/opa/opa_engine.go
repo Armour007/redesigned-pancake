@@ -3,6 +3,7 @@ package opa
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/Armour007/aura-backend/internal/policy"
 	"github.com/open-policy-agent/opa/rego"
@@ -52,6 +53,7 @@ func (e *Evaluator) Evaluate(comp policy.CompiledPolicy, input json.RawMessage) 
 	}
 	var in any
 	_ = json.Unmarshal(input, &in)
+	start := time.Now()
 	res, err := c.query.Eval(context.Background(), rego.EvalInput(in))
 	if err != nil {
 		return policy.Decision{}, err
@@ -66,7 +68,14 @@ func (e *Evaluator) Evaluate(comp policy.CompiledPolicy, input json.RawMessage) 
 	if !allow {
 		reason = "OPA deny"
 	}
-	return policy.Decision{Allow: allow, Reason: reason}, nil
+	// Build minimal trace for explainability and UI diff
+	tr := &policy.Trace{
+		InputContext: input,
+		DurationMS:   time.Since(start).Milliseconds(),
+		At:           time.Now(),
+		Engine:       e.Name(),
+	}
+	return policy.Decision{Allow: allow, Reason: reason, Trace: tr}, nil
 }
 
 var (

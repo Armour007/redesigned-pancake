@@ -4,7 +4,13 @@ version = "0.1.0"
 description = "AURA Python SDK: verify decisions and verify webhook signatures"
 authors = [{name = "AURA"}]
 requires-python = ">=3.9"
-dependencies = ["requests>=2.31.0", "fastapi>=0.115.0", "uvicorn>=0.30.0"]
+dependencies = [
+	"requests>=2.31.0",
+	"fastapi>=0.115.0",
+	"uvicorn>=0.30.0",
+	"cryptography>=41.0.0",
+	"pyld>=2.0.0",
+]
 
 [build-system]
 requires = ["setuptools>=61.0"]

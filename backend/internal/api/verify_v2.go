@@ -27,6 +27,9 @@ import (
 	"github.com/Armour007/aura-backend/internal/rel"
 	"github.com/Armour007/aura-backend/internal/risk"
 	"github.com/Armour007/aura-backend/internal/utils"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // VerifyV2Request allows richer input but stays optional for prototype
@@ -78,9 +81,21 @@ func mergeSignals(input json.RawMessage, sig risk.Signals) json.RawMessage {
 }
 
 func HandleVerifyV2(c *gin.Context) {
+	// Backpressure: simple inflight limiter
+	if !acquireVerifySlot() {
+		IncVerifyQuickReject()
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "verify overloaded"})
+		return
+	}
+	defer releaseVerifySlot()
+
+	ctx, span := otel.Tracer("aura-backend").Start(c.Request.Context(), "verify")
+	defer span.End()
+
 	orgID := c.GetString("orgID")
 	var req VerifyV2Request
 	if err := c.ShouldBindJSON(&req); err != nil {
+		span.SetStatus(codes.Error, "bad_request")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -89,8 +104,12 @@ func HandleVerifyV2(c *gin.Context) {
 	pr := attest.FromRequest(c.Request, orgID, req.AgentID.String())
 
 	// Policy selection: support multiple assignments with deterministic bucketing
-	assignments, err := polrepo.GetActiveAssignmentsForOrg(c.Request.Context(), uuid.MustParse(orgID))
+	assignCtx, assignSpan := otel.Tracer("aura-backend").Start(ctx, "db.get_active_assignments")
+	assignments, err := polrepo.GetActiveAssignmentsForOrg(assignCtx, uuid.MustParse(orgID))
+	assignSpan.End()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "db_error_assignments")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -150,15 +169,21 @@ func HandleVerifyV2(c *gin.Context) {
 		if req.TargetOrgID != "" {
 			relOrg = req.TargetOrgID
 		}
-		allowed, _, err := getGraph().Check(c.Request.Context(),
+		gctx, gspan := otel.Tracer("aura-backend").Start(ctx, "graph.check")
+		allowed, _, err := getGraph().Check(gctx,
 			rel.RelationRef{Namespace: "agent", ObjectID: pr.AgentID},
 			"can_act_for",
 			rel.RelationRef{Namespace: "org", ObjectID: relOrg},
 		)
 		if err != nil || !allowed {
+			if err != nil {
+				gspan.RecordError(err)
+			}
+			gspan.End()
 			c.JSON(http.StatusOK, VerifyV2Response{Allow: false, Reason: "No delegation to act for org"})
 			return
 		}
+		gspan.End()
 	}
 
 	// Canary rollout selection: if a rollout is active for this policy, bucket the agent deterministically
@@ -166,6 +191,7 @@ func HandleVerifyV2(c *gin.Context) {
 		Version int `db:"version"`
 		Percent int `db:"percent"`
 	}
+	_, rollSpan := otel.Tracer("aura-backend").Start(ctx, "db.get_policy_rollout")
 	if err := database.DB.Get(&rollout, `SELECT version, percent FROM policy_rollouts WHERE org_id=$1 AND policy_id=$2 AND active=true ORDER BY created_at DESC LIMIT 1`, orgID, p.ID); err == nil && rollout.Percent > 0 {
 		// Determine agent string for bucketing
 		agentStr := req.AgentID.String()
@@ -179,6 +205,7 @@ func HandleVerifyV2(c *gin.Context) {
 			}
 		}
 	}
+	rollSpan.End()
 
 	// Record risk hit and compute runtime signals
 	agentStr := req.AgentID.String()
@@ -217,8 +244,12 @@ func HandleVerifyV2(c *gin.Context) {
 	if cpc, ok := policy.GetCompiled(v.PolicyID, v.Version); ok {
 		comp = cpc
 	} else {
+		_, compSpan := otel.Tracer("aura-backend").Start(ctx, "policy.compile")
 		cp, err := e.Compile(v.Body)
+		compSpan.End()
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "compile_error")
 			c.JSON(http.StatusOK, VerifyV2Response{Allow: false, Reason: err.Error()})
 			return
 		}
@@ -227,8 +258,12 @@ func HandleVerifyV2(c *gin.Context) {
 	}
 	// Canonicalize context for stable token hashing; use canonicalized for eval too to keep parity
 	canonCtx := utils.CanonicalizeJSON(mergedCtx)
+	_, evalSpan := otel.Tracer("aura-backend").Start(ctx, "policy.evaluate")
 	dec, err := e.Evaluate(comp, canonCtx)
+	evalSpan.End()
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "eval_error")
 		c.JSON(http.StatusOK, VerifyV2Response{Allow: false, Reason: err.Error()})
 		return
 	}
@@ -294,7 +329,7 @@ func HandleVerifyV2(c *gin.Context) {
 	// Optional trust token
 	resp := VerifyV2Response{Allow: dec.Allow, Reason: dec.Reason, TraceID: dec.TraceID}
 	if req.IncludeTrustToken {
-		token := buildTrustToken(orgID, pr.AgentID, v.PolicyID.String(), v.Version, dec.Allow, dec.Reason, canonCtx, dec.TraceID)
+		token := buildTrustToken(ctx, orgID, pr.AgentID, v.PolicyID.String(), v.Version, dec.Allow, dec.Reason, canonCtx, dec.TraceID)
 		if token != "" {
 			resp.Token = token
 		}
@@ -318,9 +353,13 @@ func bucket(a, b string, rest ...string) int {
 }
 
 // buildTrustToken signs a short-lived JWT with decision details and a hash of the evaluated context
-func buildTrustToken(orgID, agentID, policyID string, version int, allow bool, reason string, ctx json.RawMessage, traceID string) string {
+func buildTrustToken(ctx context.Context, orgID, agentID, policyID string, version int, allow bool, reason string, reqCtx json.RawMessage, traceID string) string {
+	// Observability
+	tr := otel.Tracer("aura")
+	ctx, span := tr.Start(ctx, "trust_token.build")
+	defer span.End()
 	// hash of evaluation context
-	sum := sha256.Sum256(ctx)
+	sum := sha256.Sum256(reqCtx)
 	ctxHash := base64.RawURLEncoding.EncodeToString(sum[:])
 	ttl := 120
 	if v := os.Getenv("AURA_TRUST_TOKEN_TTL_SECONDS"); v != "" {
@@ -351,26 +390,34 @@ func buildTrustToken(orgID, agentID, policyID string, version int, allow bool, r
 		// Local Ed25519 path
 		if (tk.Prov == nil || *tk.Prov == "" || strings.ToLower(*tk.Prov) == "local") && tk.Alg == "EdDSA" && tk.Enc != nil && *tk.Enc != "" {
 			if priv, pub, _ := loadOrgEd25519Key(orgID); priv != nil && pub != nil {
+				span.SetAttributes(attribute.String("source", "org_local"), attribute.String("alg", "EdDSA"), attribute.String("kid", tk.Kid))
 				sig := ed25519.Sign(priv, []byte(unsigned))
 				sb := base64.RawURLEncoding.EncodeToString(sig)
 				tok := unsigned + "." + sb
 				if os.Getenv("AURA_TRUST_JTI_WRITE") == "1" {
 					_, _ = database.DB.Exec(`INSERT INTO trust_token_jti(org_id, jti, exp_at) VALUES ($1,$2,to_timestamp($3)) ON CONFLICT DO NOTHING`, orgID, jti, exp)
 				}
+				RecordTrustToken("org_local", "EdDSA", true, orgID)
+				span.SetAttributes(attribute.Bool("success", true))
 				return tok
 			}
 		}
 		// KMS-backed signing via signer interface
 		rec := kms.TrustKeyRecord{Provider: strPtrVal(tk.Prov), KeyRef: strPtrVal(tk.Ref), KeyVersion: strPtrVal(tk.Ver), Alg: tk.Alg, Kid: tk.Kid, EncPriv: strPtrVal(tk.Enc), ProviderConfig: tk.Cfg, JWKPub: tk.JWK}
 		if signer, err := kms.NewSignerFromRecord(rec); err == nil {
-			if sig, err := signer.Sign(context.Background(), []byte(unsigned)); err == nil {
+			span.SetAttributes(attribute.String("source", "org_kms"), attribute.String("alg", tk.Alg), attribute.String("kid", tk.Kid))
+			if sig, err := signer.Sign(ctx, []byte(unsigned)); err == nil {
 				sb := base64.RawURLEncoding.EncodeToString(sig)
 				tok := unsigned + "." + sb
 				if os.Getenv("AURA_TRUST_JTI_WRITE") == "1" {
 					_, _ = database.DB.Exec(`INSERT INTO trust_token_jti(org_id, jti, exp_at) VALUES ($1,$2,to_timestamp($3)) ON CONFLICT DO NOTHING`, orgID, jti, exp)
 				}
+				RecordTrustToken("org_kms", tk.Alg, true, orgID)
+				span.SetAttributes(attribute.Bool("success", true))
 				return tok
 			}
+			// signer.Sign failed
+			RecordTrustToken("org_kms", tk.Alg, false, orgID)
 		}
 	}
 	// Fallbacks remain the same
@@ -381,12 +428,15 @@ func buildTrustToken(orgID, agentID, policyID string, version int, allow bool, r
 		hb := base64.RawURLEncoding.EncodeToString([]byte(header))
 		pb := base64.RawURLEncoding.EncodeToString([]byte(payload))
 		unsigned := hb + "." + pb
+		span.SetAttributes(attribute.String("source", "env_local"), attribute.String("alg", "EdDSA"), attribute.String("kid", kid))
 		sig := ed25519.Sign(priv, []byte(unsigned))
 		sb := base64.RawURLEncoding.EncodeToString(sig)
 		tok := unsigned + "." + sb
 		if os.Getenv("AURA_TRUST_JTI_WRITE") == "1" {
 			_, _ = database.DB.Exec(`INSERT INTO trust_token_jti(org_id, jti, exp_at) VALUES ($1,$2,to_timestamp($3)) ON CONFLICT DO NOTHING`, orgID, jti, exp)
 		}
+		RecordTrustToken("env_local", "EdDSA", true, orgID)
+		span.SetAttributes(attribute.Bool("success", true))
 		return tok
 	}
 	// Fallback: HS256
@@ -395,6 +445,8 @@ func buildTrustToken(orgID, agentID, policyID string, version int, allow bool, r
 		secret = os.Getenv("JWT_SECRET")
 	}
 	if secret == "" {
+		RecordTrustToken("env_hs256", "HS256", false, orgID)
+		span.SetAttributes(attribute.String("source", "env_hs256"), attribute.String("alg", "HS256"), attribute.Bool("success", false))
 		return ""
 	}
 	jti := uuid.New().String()
@@ -411,6 +463,8 @@ func buildTrustToken(orgID, agentID, policyID string, version int, allow bool, r
 	if os.Getenv("AURA_TRUST_JTI_WRITE") == "1" {
 		_, _ = database.DB.Exec(`INSERT INTO trust_token_jti(org_id, jti, exp_at) VALUES ($1,$2,to_timestamp($3)) ON CONFLICT DO NOTHING`, orgID, jti, exp)
 	}
+	RecordTrustToken("env_hs256", "HS256", true, orgID)
+	span.SetAttributes(attribute.String("source", "env_hs256"), attribute.String("alg", "HS256"), attribute.Bool("success", true))
 	return tok
 }
 
@@ -446,4 +500,55 @@ func matchesAllowed(s string, allowed []string) bool {
 		}
 	}
 	return false
+}
+
+// --- Backpressure control for verify ---
+var (
+	verifySem     chan struct{}
+	verifySemOnce bool
+)
+
+func initVerifyLimiter() {
+	if verifySemOnce {
+		return
+	}
+	max := 0
+	if v := os.Getenv("AURA_VERIFY_MAX_INFLIGHT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			max = n
+		}
+	}
+	if max > 0 {
+		verifySem = make(chan struct{}, max)
+	} else {
+		verifySem = nil
+	}
+	verifySemOnce = true
+}
+
+func acquireVerifySlot() bool {
+	if !verifySemOnce {
+		initVerifyLimiter()
+	}
+	if verifySem == nil {
+		return true
+	}
+	select {
+	case verifySem <- struct{}{}:
+		SetVerifyInflight(len(verifySem))
+		return true
+	default:
+		return false
+	}
+}
+
+func releaseVerifySlot() {
+	if verifySem == nil {
+		return
+	}
+	select {
+	case <-verifySem:
+		SetVerifyInflight(len(verifySem))
+	default:
+	}
 }

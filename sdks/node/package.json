@@ -10,9 +10,16 @@
   "keywords": ["aura", "authorization", "trust", "sdk"],
   "exports": {
     ".": "./src/index.js",
-    "./webhooks": "./src/webhooks.js"
+    "./webhooks": "./src/webhooks.js",
+    "./trust": "./src/trust.js",
+    "./trustCache": "./src/trustCache.js",
+    "./middleware": "./src/middleware.js",
+    "./ldp": "./src/ldp.js"
   },
   "scripts": {
     "test": "node --eval \"console.log('ok')\""
+  },
+  "dependencies": {
+    "jsonld": "^8.3.2"
   }
 }

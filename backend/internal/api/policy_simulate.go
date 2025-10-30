@@ -16,8 +16,9 @@ type simulateReq struct {
 }
 
 type simulateResp struct {
-	Allow  bool   `json:"allow"`
-	Reason string `json:"reason"`
+	Allow  bool            `json:"allow"`
+	Reason string          `json:"reason"`
+	Trace  json.RawMessage `json:"trace,omitempty"`
 }
 
 // POST /organizations/:orgId/policies/:policyId/versions/:version/simulate
@@ -65,5 +66,11 @@ func SimulatePolicyVersion(c *gin.Context) {
 		c.JSON(http.StatusOK, simulateResp{Allow: false, Reason: err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, simulateResp{Allow: dec.Allow, Reason: dec.Reason})
+	var tr json.RawMessage
+	if dec.Trace != nil {
+		if b, err := json.Marshal(dec.Trace); err == nil {
+			tr = b
+		}
+	}
+	c.JSON(http.StatusOK, simulateResp{Allow: dec.Allow, Reason: dec.Reason, Trace: tr})
 }

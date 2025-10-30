@@ -44,3 +44,7 @@ export class AuraClient {
 }
 
 export { protect, protectExpress } from './protect.js'
+export { buildRequestSigningHeaders } from './signing.js'
+export { verifyTrustTokenOffline, fetchRevocations, fetchJWKS } from './trust.js'
+export { TrustCache } from './trustCache.js'
+export { auraTrustMiddleware } from './middleware.js'

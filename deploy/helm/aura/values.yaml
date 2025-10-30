@@ -54,3 +54,23 @@ ingress:
         - path: /
           pathType: Prefix
   tls: []
+
+# Security and hardening toggles
+securityContext:
+  enabled: true
+  pod:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  container:
+    enabled: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    dropAllCapabilities: true
+
+networkPolicy:
+  enabled: true
+
+pdb:
+  enabled: true
+  minAvailable: 1

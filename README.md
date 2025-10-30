@@ -28,6 +28,35 @@ Quick start (local):
 	- npm install
 	- npm run dev
 
+## Windows + VS Code tasks (recommended)
+
+You can use the prewired VS Code tasks to bring everything up with the correct environment on Windows:
+
+- DB: up (local) — starts Postgres via Docker Compose
+- Backend: go run :8081 (local-db) — runs the Go server from `backend/` with JWT_SECRET and DB_* env vars set
+- Frontend: npm run dev — starts the SvelteKit dev server on http://localhost:5173
+
+After starting the first two, open the frontend at http://localhost:5173. The frontend is already configured to talk to the API at http://localhost:8081.
+
+Health checks:
+- http://localhost:8081/healthz → 200 when healthy
+- http://localhost:8081/openapi.json → OpenAPI document
+
+Troubleshooting login (JWT_SECRET):
+- If you see “Failed to generate token: JWT_SECRET environment variable not set” on the login page, ensure the backend task you’re running includes `JWT_SECRET`. Use the “Backend: go run :8081 (local-db)” task or set the var manually before `go run`.
+
+Manual PowerShell run (from backend/):
+
+```powershell
+$env:PORT="8081"
+$env:JWT_SECRET="dev_jwt_secret_123"
+$env:DB_HOST="localhost"; $env:DB_PORT="5432"; $env:DB_USER="aura_user"; $env:DB_PASSWORD="your_strong_password"; $env:DB_NAME="aura_db"; $env:DB_SSLMODE="disable"
+$env:AURA_FRONTEND_BASE_URL="http://localhost:5173"; $env:AURA_API_BASE_URL="http://localhost:8081"
+go run .\cmd\server
+```
+
+Note: Running `go run ./cmd/server` from the repository root will fail with “go: cannot find main module…”. Always run from `backend/` or use the provided tasks.
+
 Migrations: create tables under backend/db/migrations (use your preferred tool to apply).
 
 Key API highlights:

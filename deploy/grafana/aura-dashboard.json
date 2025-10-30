@@ -12,6 +12,49 @@
     },
     {
       "type": "timeseries",
+      "title": "Verify error ratio (5m)",
+      "targets": [
+        {"expr": "sum(rate(aura_http_requests_total{path=~\"/v(1|2)/verify\",status=~\"5..\"}[5m])) / clamp_min(sum(rate(aura_http_requests_total{path=~\"/v(1|2)/verify\"}[5m])), 1e-9)"}
+      ],
+      "options": {"legend": {"showLegend": false}}
+    },
+    {
+      "type": "gauge",
+      "title": "Verify p99 latency (s)",
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum by (le)(rate(aura_http_request_duration_seconds_bucket{path=~\"/v(1|2)/verify\"}[5m])))"}
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Verify inflight",
+      "targets": [
+        {"expr": "aura_verify_inflight"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Verify quick rejects (rps)",
+      "targets": [
+        {"expr": "sum(rate(aura_verify_quick_reject_total[5m]))"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Circuit breakers (open=1)",
+      "targets": [
+        {"expr": "max by (breaker)(aura_circuit_breaker_open)"}
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "SLO burn rate (verify 0.5% target)",
+      "targets": [
+        {"expr": "(sum(rate(aura_http_requests_total{path=~\"/v(1|2)/verify\",status=~\"5..\"}[5m])) / clamp_min(sum(rate(aura_http_requests_total{path=~\"/v(1|2)/verify\"}[5m])), 1e-9)) / 0.005"}
+      ]
+    },
+    {
+      "type": "timeseries",
       "title": "HTTP p95 latency by path",
       "targets": [
         {"expr": "histogram_quantile(0.95, sum by (le, path)(rate(aura_http_request_duration_seconds_bucket[5m])))"}
@@ -82,6 +125,38 @@
       "title": "Top DLQ reasons (1h)",
       "targets": [
         {"expr": "sum by (reason)(rate(aura_dlq_insert_total{stream=\"codegen\"}[1h]))"}
+      ]
+    }
+    ,
+    {
+      "type": "stat",
+      "title": "Verify RPS (v1+v2)",
+      "targets": [
+        {"expr": "sum(rate(aura_http_requests_total{path=~\"/v(1|2)/verify\"}[5m]))"}
+      ]
+    }
+    ,
+    {
+      "type": "gauge",
+      "title": "Verify p95 latency (s)",
+      "targets": [
+        {"expr": "histogram_quantile(0.95, sum by (le)(rate(aura_http_request_duration_seconds_bucket{path=~\"/v(1|2)/verify\"}[5m])))"}
+      ]
+    }
+    ,
+    {
+      "type": "stat",
+      "title": "JWKS Cache Hit %",
+      "targets": [
+        {"expr": "100 * sum(rate(aura_cache_hit_total{component=\"jwks\"}[5m])) / clamp_min(sum(rate(aura_cache_hit_total{component=\"jwks\"}[5m])) + sum(rate(aura_cache_miss_total{component=\"jwks\"}[5m])), 1e-9)"}
+      ]
+    }
+    ,
+    {
+      "type": "stat",
+      "title": "Decision ALLOWED %",
+      "targets": [
+        {"expr": "100 * sum(rate(aura_verify_decisions_total{decision=\"ALLOWED\"}[5m])) / clamp_min(sum(rate(aura_verify_decisions_total[5m])), 1e-9)"}
       ]
     }
   ],

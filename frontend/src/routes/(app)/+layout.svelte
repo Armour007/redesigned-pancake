@@ -60,7 +60,9 @@
   // Sidebar navigation items
   const navItems = [
     { href: '/dashboard', label: 'Overview', icon: 'dashboard' }, // Material Symbols icon names
+    { href: '/devices', label: 'Devices', icon: 'devices' },
     { href: '/agents', label: 'Agents', icon: 'memory' },
+    { href: '/policies/author', label: 'Policies', icon: 'policy' },
     { href: '/logs', label: 'Logs', icon: 'article' },
     { href: '/settings', label: 'Settings', icon: 'settings' },
     { href: '/apikeys', label: 'API Keys', icon: 'key' },

@@ -67,10 +67,31 @@ var (
 		prometheus.CounterOpts{Namespace: "aura", Name: "api_key_usage_total", Help: "API key usage by key prefix (and optional org)"},
 		[]string{"key_prefix", "org"},
 	)
+	// Cache metrics (RED-compatible)
+	cacheHitTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Namespace: "aura", Name: "cache_hit_total", Help: "Cache hits by component and key"},
+		[]string{"component", "key"},
+	)
+	cacheMissTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Namespace: "aura", Name: "cache_miss_total", Help: "Cache misses by component and key"},
+		[]string{"component", "key"},
+	)
+	// Trust token issuance metrics
+	trustTokensTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{Namespace: "aura", Name: "trust_tokens_total", Help: "Trust tokens built by source/alg and outcome"},
+		[]string{"source", "alg", "outcome", "org"},
+	)
+	// In-flight verification gauge and quick error counter
+	verifyInflight = prometheus.NewGauge(
+		prometheus.GaugeOpts{Namespace: "aura", Name: "verify_inflight", Help: "Current number of in-flight verify requests"},
+	)
+	verifyQuickRejectTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{Namespace: "aura", Name: "verify_quick_reject_total", Help: "Total verify requests rejected immediately due to backpressure"},
+	)
 )
 
 func init() {
-	prometheus.MustRegister(reqDuration, reqTotal, decisionTotal, externalDuration, externalTotal, breakerOpen, dlqInsertTotal, dlqDepth, queuePending, decisionReasonTotal, apiKeyUsageTotal)
+	prometheus.MustRegister(reqDuration, reqTotal, decisionTotal, externalDuration, externalTotal, breakerOpen, dlqInsertTotal, dlqDepth, queuePending, decisionReasonTotal, apiKeyUsageTotal, cacheHitTotal, cacheMissTotal, trustTokensTotal, verifyInflight, verifyQuickRejectTotal)
 }
 
 // MetricsMiddleware records basic HTTP metrics
@@ -162,3 +183,27 @@ func RecordAPIKeyUsage(keyPrefix, org string) {
 	}
 	apiKeyUsageTotal.With(prometheus.Labels{"key_prefix": keyPrefix, "org": org}).Inc()
 }
+
+// RecordCacheHit increments the cache hit counter for a component/key
+func RecordCacheHit(component, key string) { cacheHitTotal.WithLabelValues(component, key).Inc() }
+
+// RecordCacheMiss increments the cache miss counter for a component/key
+func RecordCacheMiss(component, key string) { cacheMissTotal.WithLabelValues(component, key).Inc() }
+
+// RecordTrustToken records a trust token issuance attempt with outcome
+func RecordTrustToken(source, alg string, success bool, org string) {
+	if !includeOrgLabel {
+		org = ""
+	}
+	outcome := "success"
+	if !success {
+		outcome = "error"
+	}
+	trustTokensTotal.With(prometheus.Labels{"source": source, "alg": alg, "outcome": outcome, "org": org}).Inc()
+}
+
+// SetVerifyInflight sets the current in-flight verify gauge
+func SetVerifyInflight(n int) { verifyInflight.Set(float64(n)) }
+
+// IncVerifyQuickReject increments the quick-reject counter
+func IncVerifyQuickReject() { verifyQuickRejectTotal.Inc() }

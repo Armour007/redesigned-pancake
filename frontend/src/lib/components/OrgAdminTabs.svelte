@@ -11,5 +11,7 @@
     href={`/organizations/${_org}/webhooks`}>Webhooks</a>
   <a class={`px-3 py-1.5 rounded-md ${path.endsWith('/trust-keys') ? 'bg-white/10 text-white' : 'text-gray-300 hover:text-white hover:bg-white/5'}`}
     href={`/organizations/${_org}/trust-keys`}>Trust keys</a>
+  <a class={`px-3 py-1.5 rounded-md ${path.endsWith('/regulator/audit-export') ? 'bg-white/10 text-white' : 'text-gray-300 hover:text-white hover:bg-white/5'}`}
+    href={`/organizations/${_org}/regulator/audit-export`}>Audit export</a>
   <slot />
 </div>

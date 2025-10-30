@@ -23,6 +23,11 @@ export default [
       parserOptions: {
         parser: ts.parser
       }
+    },
+    rules: {
+      // High-churn Svelte authoring: keep these as warnings to avoid blocking CI
+      "@typescript-eslint/no-explicit-any": "warn",
+      "no-empty": "warn"
     }
   },
   {

@@ -1,0 +1,114 @@
+name: Deploy Staging
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: staging-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Docker image tag to deploy
+        required: true
+        default: latest
+
+jobs:
+  lint-yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint workflow YAML
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: .github/workflows
+          config_data: |
+            extends: default
+            rules:
+              line-length:
+                max: 200
+                level: warning
+              truthy: disable
+
+  openapi-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate backend/static/openapi.json
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Parse JSON
+        run: |
+          python - <<'PY'
+          import json, sys
+          p = 'backend/static/openapi.json'
+          try:
+              with open(p, 'rb') as f:
+                  json.load(f)
+          except Exception as e:
+              print('JSON_FAIL:', e)
+              sys.exit(1)
+          else:
+              print('JSON_OK')
+          PY
+
+  build-and-push:
+    needs: [lint-yaml, openapi-validate]
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY_URL: ${{ secrets.REGISTRY_URL }}
+      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+      IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+    strategy:
+      matrix:
+        component: [backend, frontend]
+        include:
+          - component: backend
+            context: ./backend
+          - component: frontend
+            context: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Detect registry credentials
+        run: |
+          if [ -n "${REGISTRY_URL}" ] && [ -n "${REGISTRY_USERNAME}" ] && [ -n "${REGISTRY_PASSWORD}" ]; then
+            echo "HAVE_REGISTRY=true" >> $GITHUB_ENV
+          else
+            echo "HAVE_REGISTRY=false" >> $GITHUB_ENV
+          fi
+      - name: Log in to registry
+        if: ${{ env.HAVE_REGISTRY == 'true' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_URL }}
+          username: ${{ env.REGISTRY_USERNAME }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+      - name: Build and push ${{ matrix.component }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: ${{ env.HAVE_REGISTRY == 'true' }}
+          tags: ${{ env.REGISTRY_URL }}/aura-${{ matrix.component }}:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy (guarded script)
+        shell: bash
+        env:
+          KUBECONFIG_CONTENTS: ${{ secrets.KUBECONFIG_CONTENTS }}
+          REGISTRY_URL: ${{ secrets.REGISTRY_URL }}
+          IMAGE_TAG: ${{ github.event.inputs.image_tag }}
+        run: |
+          bash scripts/deploy-staging.sh

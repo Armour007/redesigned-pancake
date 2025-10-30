@@ -616,3 +616,107 @@ func DeleteWebhookDLQ(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"deleted": deleted})
 }
+
+// AdminListDevices returns a minimal list of devices visible to the current user across organizations they belong to.
+// GET /admin/devices
+// Response: [ { id, fingerprint, posture_ok, last_attested_at } ]
+func AdminListDevices(c *gin.Context) {
+	userID := c.GetString("userID")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	type row struct {
+		ID           string     `db:"id"`
+		Fingerprint  string     `db:"device_fingerprint"`
+		PostureOK    *bool      `db:"posture_ok"`
+		LastAttested *time.Time `db:"last_attested_at"`
+	}
+	rows := []row{}
+	// Scope to orgs the user is a member of
+	q := `
+		SELECT d.id::text, d.device_fingerprint, d.posture_ok, d.last_attested_at
+		FROM devices d
+		WHERE d.org_id IN (
+			SELECT m.organization_id FROM organization_members m WHERE m.user_id = $1
+		)
+		ORDER BY d.last_attested_at DESC NULLS LAST, d.created_at DESC
+		LIMIT 500`
+	if err := database.DB.Select(&rows, q, userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make([]gin.H, 0, len(rows))
+	for _, r := range rows {
+		o := gin.H{
+			"id":          r.ID,
+			"fingerprint": r.Fingerprint,
+			"posture_ok":  false,
+		}
+		if r.PostureOK != nil {
+			o["posture_ok"] = *r.PostureOK
+		}
+		if r.LastAttested != nil {
+			o["last_attested_at"] = r.LastAttested
+		}
+		out = append(out, o)
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// AdminListDevicesDetail returns a richer device view including org and posture JSON for dashboard use.
+// GET /admin/devices/detail
+func AdminListDevicesDetail(c *gin.Context) {
+	userID := c.GetString("userID")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	type row struct {
+		ID           string     `db:"id"`
+		OrgID        string     `db:"org_id"`
+		OrgName      string     `db:"org_name"`
+		Fingerprint  string     `db:"device_fingerprint"`
+		Provider     string     `db:"tee_provider"`
+		Posture      []byte     `db:"posture"`
+		PostureOK    *bool      `db:"posture_ok"`
+		LastAttested *time.Time `db:"last_attested_at"`
+		CreatedAt    time.Time  `db:"created_at"`
+	}
+	rows := []row{}
+	q := `
+		SELECT d.id::text, d.org_id::text, o.name as org_name, d.device_fingerprint, COALESCE(d.tee_provider,'') as tee_provider,
+			   COALESCE(d.posture,'{}'::jsonb) as posture, d.posture_ok, d.last_attested_at, d.created_at
+		FROM devices d
+		JOIN organizations o ON o.id = d.org_id
+		WHERE d.org_id IN (SELECT m.organization_id FROM organization_members m WHERE m.user_id = $1)
+		ORDER BY d.last_attested_at DESC NULLS LAST, d.created_at DESC
+		LIMIT 500`
+	if err := database.DB.Select(&rows, q, userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	out := make([]gin.H, 0, len(rows))
+	for _, r := range rows {
+		var posture any
+		_ = json.Unmarshal(r.Posture, &posture)
+		item := gin.H{
+			"id":          r.ID,
+			"org_id":      r.OrgID,
+			"org_name":    r.OrgName,
+			"fingerprint": r.Fingerprint,
+			"provider":    r.Provider,
+			"posture":     posture,
+			"posture_ok":  false,
+			"created_at":  r.CreatedAt,
+		}
+		if r.PostureOK != nil {
+			item["posture_ok"] = *r.PostureOK
+		}
+		if r.LastAttested != nil {
+			item["last_attested_at"] = r.LastAttested
+		}
+		out = append(out, item)
+	}
+	c.JSON(http.StatusOK, gin.H{"items": out})
+}

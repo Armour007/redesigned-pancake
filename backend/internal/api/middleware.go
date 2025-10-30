@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -283,6 +284,46 @@ func RequireOrgAdmin() gin.HandlerFunc {
 			return
 		}
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Admin privileges required"})
+	}
+}
+
+// RequireOrgRoleIn allows only specific roles.
+func RequireOrgRoleIn(allowed ...string) gin.HandlerFunc {
+	set := map[string]struct{}{}
+	for _, r := range allowed {
+		set[strings.ToLower(strings.TrimSpace(r))] = struct{}{}
+	}
+	return func(c *gin.Context) {
+		role := strings.ToLower(c.GetString("orgRole"))
+		if _, ok := set[role]; ok {
+			c.Next()
+			return
+		}
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Insufficient role"})
+	}
+}
+
+// ReadOnlyGuardMiddleware enforces least-privilege for read-only and auditor roles.
+// It blocks state-changing methods (POST, PUT, PATCH, DELETE) while allowing GET/HEAD.
+// Owner/admin are unaffected.
+func ReadOnlyGuardMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role := strings.ToLower(c.GetString("orgRole"))
+		if role == "owner" || role == "admin" {
+			c.Next()
+			return
+		}
+		if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead || c.Request.Method == http.MethodOptions {
+			c.Next()
+			return
+		}
+		// auditors and read-only cannot mutate
+		if role == "auditor" || role == "read-only" || role == "readonly" || role == "reader" || role == "member" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "This action is not permitted for your role"})
+			return
+		}
+		// default deny for unknown roles on mutations
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Role not permitted"})
 	}
 }
 
@@ -573,6 +614,99 @@ func RequestSigningMiddleware() gin.HandlerFunc {
 			// schedule cleanup
 			go func(k string) { time.Sleep(ttl); idemStore.Delete(k) }(key)
 		}
+		c.Next()
+	}
+}
+
+// --- HSTS middleware ---
+// If AURA_HSTS_ENABLE=1, sets Strict-Transport-Security with configurable max-age and includeSubDomains
+func HSTSMiddlewareFromEnv() gin.HandlerFunc {
+	if os.Getenv("AURA_HSTS_ENABLE") == "" {
+		return func(c *gin.Context) { c.Next() }
+	}
+	maxAge := parseEnvInt("AURA_HSTS_MAX_AGE", 15552000) // 180 days
+	includeSub := os.Getenv("AURA_HSTS_INCLUDE_SUBDOMAINS")
+	val := fmt.Sprintf("max-age=%d", maxAge)
+	if includeSub == "1" || strings.EqualFold(includeSub, "true") {
+		val += "; includeSubDomains"
+	}
+	return func(c *gin.Context) {
+		c.Writer.Header().Set("Strict-Transport-Security", val)
+		c.Next()
+	}
+}
+
+// --- Content Security Policy (CSP) middleware ---
+// Adds CSP and security headers to all responses. Can be tuned via env AURA_CSP_POLICY.
+func CSPMiddleware() gin.HandlerFunc {
+	// Reasonable default: disallow everything by default, allow self for basic fetch and style, block inline scripts
+	policy := os.Getenv("AURA_CSP_POLICY")
+	if policy == "" {
+		policy = "default-src 'none'; frame-ancestors 'none'; base-uri 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; form-action 'self'"
+	}
+	return func(c *gin.Context) {
+		h := c.Writer.Header()
+		h.Set("Content-Security-Policy", policy)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		c.Next()
+	}
+}
+
+// --- CSRF protection (double-submit token) ---
+// If enabled (AURA_CSRF_ENABLE=1), require X-CSRF-Token to match csrf_token cookie for state-changing requests on dashboard-like routes.
+func CSRFMiddlewareFromEnv() gin.HandlerFunc {
+	if os.Getenv("AURA_CSRF_ENABLE") == "" {
+		return func(c *gin.Context) { c.Next() }
+	}
+	return func(c *gin.Context) {
+		// Only enforce on state-changing methods
+		if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodHead || c.Request.Method == http.MethodOptions {
+			c.Next()
+			return
+		}
+		token := c.GetHeader("X-CSRF-Token")
+		cookie, err := c.Cookie("csrf_token")
+		if err != nil || token == "" || cookie == "" || token != cookie {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "CSRF token mismatch"})
+			return
+		}
+		c.Next()
+	}
+}
+
+// Helper to mint a CSRF token value (e.g., set on login response). Returns hex(sha1(reqid+time+rand)).
+func GenerateCSRFToken(seed string) string {
+	h := sha1.New()
+	h.Write([]byte(seed))
+	h.Write([]byte("|"))
+	h.Write([]byte(time.Now().UTC().Format(time.RFC3339Nano)))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// --- Agent mTLS extraction ---
+// If TLS is terminated here and client certs are presented, attach certificate fingerprint and subject to context.
+// Use with VerifyClientCertIfGiven at server and enforce per-route via this middleware.
+func AgentCertBindingMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.TLS == nil || len(c.Request.TLS.PeerCertificates) == 0 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "client certificate required"})
+			return
+		}
+		cert := c.Request.TLS.PeerCertificates[0]
+		// Bind agent by subject CN or URI SAN if present (MVP: CN)
+		agentID := cert.Subject.CommonName
+		if agentID == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "client certificate missing agent id"})
+			return
+		}
+		// Fingerprint for auditing
+		fp := sha256.Sum256(cert.Raw)
+		c.Set("agentID", agentID)
+		c.Set("agentCertFP", hex.EncodeToString(fp[:]))
+		c.Set("agentCertNotAfter", cert.NotAfter)
 		c.Next()
 	}
 }

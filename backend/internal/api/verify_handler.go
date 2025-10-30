@@ -8,11 +8,15 @@ import (
 	"log"
 	"net" // Make sure this is imported
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	database "github.com/Armour007/aura-backend/internal"
 	"github.com/Armour007/aura-backend/internal/engine"
@@ -21,6 +25,8 @@ import (
 
 // HandleVerifyRequest handles the core permission verification requests
 func HandleVerifyRequest(c *gin.Context) {
+	ctx, span := otel.Tracer("aura-backend").Start(c.Request.Context(), "verify")
+	defer span.End()
 	var req VerifyRequest
 
 	// Extract API key context from middleware
@@ -34,33 +40,49 @@ func HandleVerifyRequest(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid organization context"})
 		return
 	}
+	span.SetAttributes(attribute.String("org_id", orgID.String()))
 	apiKeyPrefix, _ := c.Get("apiKeyPrefix")
 
 	// Bind JSON request body and validate
 	if err := c.ShouldBindJSON(&req); err != nil { // Use := to declare err in this block
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
 		go logEvent(c, req, "DENIED", "Invalid request body", asString(apiKeyPrefix), orgID)
+		span.SetStatus(codes.Error, "bind json")
 		return
 	}
+	span.SetAttributes(attribute.String("agent_id", req.AgentID.String()))
 
 	// Basic validation: Is the provided context valid JSON?
 	if !json.Valid(req.RequestContext) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Field 'request_context' must contain valid JSON"})
 		go logEvent(c, req, "DENIED", "Invalid request context format", asString(apiKeyPrefix), orgID)
+		span.SetStatus(codes.Error, "invalid context json")
 		return
 	}
 
 	// Ensure the agent belongs to this organization
 	var count int
-	err = database.DB.Get(&count, `SELECT COUNT(1) FROM agents WHERE id=$1 AND organization_id=$2`, req.AgentID, orgID)
+	{ // span for DB membership check
+		dbctx, dbspan := otel.Tracer("aura-backend").Start(ctx, "db.agent_membership")
+		defer dbspan.End()
+		err = database.DB.GetContext(dbctx, &count, `SELECT COUNT(1) FROM agents WHERE id=$1 AND organization_id=$2`, req.AgentID, orgID)
+	}
 	if err != nil || count == 0 {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Agent not found in organization"})
 		go logEvent(c, req, "DENIED", "Agent not in organization", asString(apiKeyPrefix), orgID)
+		span.SetStatus(codes.Error, "agent not in org")
 		return
 	}
 
 	// Call the core evaluation engine
-	allowed, reason := engine.Evaluate(req.AgentID, req.RequestContext)
+	var allowed bool
+	var reason string
+	{ // span for evaluation
+		_, evspan := otel.Tracer("aura-backend").Start(ctx, "engine.evaluate")
+		allowed, reason = engine.Evaluate(req.AgentID, req.RequestContext)
+		evspan.SetAttributes(attribute.String("reason", reason))
+		evspan.End()
+	}
 
 	// Determine decision string
 	decision := "DENIED"
@@ -71,8 +93,9 @@ func HandleVerifyRequest(c *gin.Context) {
 	// record metrics for decision outcome with org label
 	RecordDecision(decision, orgID.String())
 	RecordDecisionReason(reason, decision, orgID.String())
+	span.SetAttributes(attribute.String("decision", decision), attribute.String("reason", reason))
 
-	// Log the event asynchronously
+	// Log the event asynchronously (offload heavy writes if configured)
 	go func() {
 		logEvent(c, req, decision, reason, asString(apiKeyPrefix), orgID)
 		// After logging, emit webhook to any active endpoints for this org
@@ -172,6 +195,12 @@ func logEvent(c *gin.Context, req VerifyRequest, decision string, reason string,
 		StatusCode:      statusPtr,
 	}
 
+	// Offload to queue if configured
+	if mode := os.Getenv("AURA_EVENTLOG_OFFLOAD"); mode == "redis" && redisClient != nil {
+		payload, _ := json.Marshal(event)
+		_ = redisClient.XAdd(context.Background(), &redis.XAddArgs{Stream: "aura:event_logs", Values: map[string]any{"payload": string(payload)}}).Err()
+		return
+	}
 	query := `INSERT INTO event_logs (organization_id, agent_id, timestamp, event_type, api_key_prefix_used, decision, request_details, decision_reason, client_ip_address, request_id, user_agent, path, status_code)
 			  VALUES (:organization_id, :agent_id, :timestamp, :event_type, :api_key_prefix_used, :decision, :request_details, :decision_reason, :client_ip_address, :request_id, :user_agent, :path, :status_code)`
 

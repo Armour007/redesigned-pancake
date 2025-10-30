@@ -2,9 +2,14 @@ package aura
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"time"
 )
 
 type Client struct {
@@ -55,4 +60,20 @@ func (c *Client) Verify(agentID string, requestContext any) (*VerifyResponse, er
 		return nil, err
 	}
 	return &out, nil
+}
+
+// BuildRequestSigningHeaders constructs X-Aura-* headers for request signing.
+// canonical = METHOD + "\n" + PATH + "\n" + TIMESTAMP + "\n" + NONCE + "\n" + BODY
+func BuildRequestSigningHeaders(secret, method, path string, body []byte) map[string]string {
+	ts := time.Now().Unix()
+	nonce := time.Now().Format("20060102T150405.000000000")
+	unsigned := method + "\n" + path + "\n" + fmt.Sprintf("%d", ts) + "\n" + nonce + "\n" + string(body)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(unsigned))
+	sig := hex.EncodeToString(mac.Sum(nil))
+	return map[string]string{
+		"X-Aura-Timestamp": fmt.Sprintf("%d", ts),
+		"X-Aura-Nonce":     nonce,
+		"X-Aura-Signature": sig,
+	}
 }

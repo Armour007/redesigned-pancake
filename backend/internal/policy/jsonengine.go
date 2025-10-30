@@ -61,7 +61,9 @@ func (e *AuraJSONEvaluator) Evaluate(compiled CompiledPolicy, input json.RawMess
 	}
 
 	var allow bool
+	var requireApproval bool
 	reason := "No matching allow rule"
+	var hints []string
 
 	for _, r := range rules {
 		rm, ok := r.(map[string]any)
@@ -86,10 +88,22 @@ func (e *AuraJSONEvaluator) Evaluate(compiled CompiledPolicy, input json.RawMess
 				reason = "Matched allow rule"
 				// continue to see if a deny appears later and overrides when configured
 			}
+			if effect == "require_approval" || effect == "needs_approval" {
+				requireApproval = true
+				// Optional hint from rule
+				if h, ok := rm["hint"].(string); ok && h != "" {
+					hints = append(hints, h)
+				} else {
+					hints = append(hints, "Human approval required")
+				}
+				if !allow {
+					reason = "Requires human approval"
+				}
+			}
 		}
 	}
 
-	d := Decision{Allow: allow, Reason: reason, Trace: trace}
+	d := Decision{Allow: allow, Reason: reason, Trace: trace, RequireApproval: requireApproval, Hints: hints}
 	d.TraceID = hashDecision(input, cj.Body)
 	d.Trace.DurationMS = time.Since(start).Milliseconds()
 	return d, nil

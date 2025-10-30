@@ -17,6 +17,7 @@ import (
 
 	database "github.com/Armour007/aura-backend/internal"
 	redis "github.com/redis/go-redis/v9"
+	"go.opentelemetry.io/otel"
 )
 
 // getRedisFromEnv returns a Redis client if configured via AURA_REDIS_ADDR, else nil
@@ -123,15 +124,23 @@ func loadOrgEd25519Key(orgID string) (ed25519.PrivateKey, ed25519.PublicKey, str
 
 // JWKS publishes the public signing key used for trust tokens (if configured)
 func JWKS(c *gin.Context) {
+	baseCtx := context.Background()
+	if c.Request != nil {
+		baseCtx = c.Request.Context()
+	}
+	ctx, span := otel.Tracer("aura-backend").Start(baseCtx, "jwks.global")
+	defer span.End()
 	// Try Redis cache first
 	rc := getRedisFromEnvLocal()
 	if rc != nil {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
+		ctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 		defer cancel()
 		if b, err := rc.Get(ctx, "jwks:global").Bytes(); err == nil && len(b) > 0 {
+			RecordCacheHit("jwks", "global")
 			c.Data(200, "application/json", b)
 			return
 		}
+		RecordCacheMiss("jwks", "global")
 	}
 	_, pub, kid := loadEd25519KeyFromEnv()
 	if pub == nil {
@@ -142,7 +151,7 @@ func JWKS(c *gin.Context) {
 	k := jwk{Kty: "OKP", Crv: "Ed25519", Alg: "EdDSA", Use: "sig", Kid: kid, X: x}
 	payload := jwks{Keys: []jwk{k}}
 	if rc != nil {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
+		ctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 		defer cancel()
 		if jb, err := json.Marshal(payload); err == nil {
 			ttl := 10 * time.Minute
@@ -161,16 +170,24 @@ func JWKS(c *gin.Context) {
 // GET /.well-known/aura/:orgId/jwks.json
 func OrgJWKS(c *gin.Context) {
 	orgID := c.Param("orgId")
+	baseCtx := context.Background()
+	if c.Request != nil {
+		baseCtx = c.Request.Context()
+	}
+	ctx, span := otel.Tracer("aura-backend").Start(baseCtx, "jwks.org")
+	defer span.End()
 	// Redis cached response
 	rc := getRedisFromEnvLocal()
 	if rc != nil {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
+		ctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 		defer cancel()
 		key := fmt.Sprintf("jwks:org:%s", orgID)
 		if b, err := rc.Get(ctx, key).Bytes(); err == nil && len(b) > 0 {
+			RecordCacheHit("jwks", "org")
 			c.Data(200, "application/json", b)
 			return
 		}
+		RecordCacheMiss("jwks", "org")
 	}
 	rows, err := database.DB.Queryx(`SELECT alg, COALESCE(jwk_pub,'{}'::jsonb), COALESCE(ed25519_private_key_base64,''), COALESCE(kid,'') FROM trust_keys WHERE org_id=$1 AND active=true ORDER BY created_at DESC LIMIT 10`, orgID)
 	if err != nil {
@@ -242,7 +259,7 @@ func OrgJWKS(c *gin.Context) {
 	}
 	payload := jwks{Keys: keys}
 	if rc != nil {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 200*time.Millisecond)
+		ctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 		defer cancel()
 		if jb, err := json.Marshal(payload); err == nil {
 			ttl := 10 * time.Minute

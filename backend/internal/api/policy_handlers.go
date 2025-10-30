@@ -22,6 +22,8 @@ var evalRegistry = func() map[string]policy.Evaluator {
 	// Optional OPA/Rego engine (enable via env AURA_POLICY_ENABLE_OPA=1)
 	if os.Getenv("AURA_POLICY_ENABLE_OPA") == "1" {
 		m[policy.EngineRego] = opaeval.New()
+		// Accept alias "opa" for engine type for convenience/migration
+		m["opa"] = opaeval.New()
 	}
 	return m
 }()

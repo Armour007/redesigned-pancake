@@ -5,14 +5,30 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"math/big"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	aws "github.com/aws/aws-sdk-go-v2/aws"
+	awscfg "github.com/aws/aws-sdk-go-v2/config"
+	kms "github.com/aws/aws-sdk-go-v2/service/kms"
+	kmstypes "github.com/aws/aws-sdk-go-v2/service/kms/types"
+
+	// GCP KMS
+	gcpkms "cloud.google.com/go/kms/apiv1"
+	kmspb "cloud.google.com/go/kms/apiv1/kmspb"
+	"google.golang.org/api/option"
+
+	// Azure Key Vault
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
 )
 
 // SignAlgorithm identifiers for JWT headers
@@ -58,11 +74,11 @@ func NewSignerFromRecord(rec TrustKeyRecord) (Signer, error) {
 	case "vault":
 		return NewVaultSigner(rec)
 	case "aws":
-		return nil, errors.New("aws kms signer not implemented in this build")
+		return NewAWSSigner(rec)
 	case "gcp":
-		return nil, errors.New("gcp kms signer not implemented in this build")
+		return NewGCPSigner(rec)
 	case "azure":
-		return nil, errors.New("azure key vault signer not implemented in this build")
+		return NewAzureSigner(rec)
 	default:
 		return nil, errors.New("unknown provider")
 	}
@@ -245,6 +261,343 @@ func (s *VaultSigner) Sign(ctx context.Context, unsigned []byte) ([]byte, error)
 	copy(sigOut[32-len(rb):32], rb)
 	copy(sigOut[64-len(sb):], sb)
 	return sigOut, nil
+}
+
+// ----- AWS KMS signer (ES256) -----
+type AWSSigner struct {
+	keyID  string
+	alg    string
+	kid    string
+	jwk    map[string]any
+	client *kms.Client
+}
+
+func NewAWSSigner(rec TrustKeyRecord) (Signer, error) {
+	cfgMap := map[string]any{}
+	if len(rec.ProviderConfig) > 0 {
+		_ = json.Unmarshal(rec.ProviderConfig, &cfgMap)
+	}
+	region := os.Getenv("AWS_REGION")
+	if v, ok := cfgMap["region"].(string); ok && v != "" {
+		region = v
+	}
+	if region == "" {
+		return nil, errors.New("aws region not configured")
+	}
+	// Optional endpoint override (e.g., localstack)
+	endpointURL, _ := cfgMap["endpoint_url"].(string)
+	// Load AWS config
+	cfg, err := awscfg.LoadDefaultConfig(context.Background(), awscfg.WithRegion(region))
+	if err != nil {
+		return nil, err
+	}
+	var client *kms.Client
+	if endpointURL != "" {
+		client = kms.NewFromConfig(cfg, func(o *kms.Options) { o.BaseEndpoint = aws.String(endpointURL) })
+	} else {
+		client = kms.NewFromConfig(cfg)
+	}
+	alg := rec.Alg
+	if alg == "" {
+		alg = AlgES256
+	}
+	kid := rec.Kid
+	if strings.TrimSpace(kid) == "" {
+		kid = "aws:" + rec.KeyRef
+		if rec.KeyVersion != "" {
+			kid += "@" + rec.KeyVersion
+		}
+	}
+	var jwk map[string]any
+	if len(rec.JWKPub) > 0 {
+		_ = json.Unmarshal(rec.JWKPub, &jwk)
+	}
+	return &AWSSigner{keyID: rec.KeyRef, alg: alg, kid: kid, jwk: jwk, client: client}, nil
+}
+
+func (s *AWSSigner) Algorithm() string { return s.alg }
+func (s *AWSSigner) KeyID() string     { return s.kid }
+
+func (s *AWSSigner) PublicJWK(ctx context.Context) (map[string]any, error) {
+	if s.jwk != nil {
+		return s.jwk, nil
+	}
+	// Fetch from AWS KMS
+	out, err := s.client.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: &s.keyID})
+	if err != nil {
+		return nil, err
+	}
+	// Parse DER SubjectPublicKeyInfo
+	pk, err := x509.ParsePKIXPublicKey(out.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+	ec, ok := pk.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, errors.New("kms public key is not ecdsa")
+	}
+	jwk := ECP256PublicJWK(ec, s.kid)
+	s.jwk = jwk
+	return jwk, nil
+}
+
+func (s *AWSSigner) Sign(ctx context.Context, unsigned []byte) ([]byte, error) {
+	if s.alg != AlgES256 {
+		return nil, errors.New("aws signer only supports ES256")
+	}
+	algo := kmstypes.SigningAlgorithmSpecEcdsaSha256
+	mt := kmstypes.MessageTypeRaw
+	out, err := s.client.Sign(ctx, &kms.SignInput{
+		KeyId:            &s.keyID,
+		Message:          unsigned,
+		SigningAlgorithm: algo,
+		MessageType:      mt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// KMS returns ASN.1 DER for ECDSA signatures
+	r, sBig, ok := parseECDSADER(out.Signature)
+	if !ok {
+		return nil, errors.New("invalid ECDSA signature from KMS")
+	}
+	rb := r.Bytes()
+	sb := sBig.Bytes()
+	sig := make([]byte, 64)
+	copy(sig[32-len(rb):32], rb)
+	copy(sig[64-len(sb):], sb)
+	return sig, nil
+}
+
+// ----- GCP KMS signer (ES256) -----
+type GCPSigner struct {
+	versionName string
+	alg         string
+	kid         string
+	jwk         map[string]any
+	client      *gcpkms.KeyManagementClient
+}
+
+func NewGCPSigner(rec TrustKeyRecord) (Signer, error) {
+	cfg := map[string]any{}
+	if len(rec.ProviderConfig) > 0 {
+		_ = json.Unmarshal(rec.ProviderConfig, &cfg)
+	}
+	// Key reference can be either a cryptoKeyVersion name or a cryptoKey; prefer full version
+	name := rec.KeyRef
+	if !strings.Contains(name, "/cryptoKeyVersions/") {
+		ver := rec.KeyVersion
+		if ver == "" {
+			ver = "1"
+		}
+		if strings.Contains(name, "/cryptoKeys/") {
+			name = strings.TrimSuffix(name, "/")
+			name = name + "/cryptoKeyVersions/" + ver
+		}
+	}
+	if name == "" {
+		return nil, errors.New("gcp kms key name not configured")
+	}
+	// Optional: endpoint or credentials file
+	var opts []option.ClientOption
+	if ep, _ := cfg["endpoint"].(string); ep != "" {
+		opts = append(opts, option.WithEndpoint(ep))
+	}
+	if credFile, _ := cfg["credentials_file"].(string); credFile != "" {
+		opts = append(opts, option.WithCredentialsFile(credFile))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	client, err := gcpkms.NewKeyManagementClient(ctx, opts...)
+	if err != nil {
+		return nil, err
+	}
+	alg := rec.Alg
+	if alg == "" {
+		alg = AlgES256
+	}
+	kid := rec.Kid
+	if strings.TrimSpace(kid) == "" {
+		kid = "gcp:" + name
+	}
+	var jwk map[string]any
+	if len(rec.JWKPub) > 0 {
+		_ = json.Unmarshal(rec.JWKPub, &jwk)
+	}
+	return &GCPSigner{versionName: name, alg: alg, kid: kid, jwk: jwk, client: client}, nil
+}
+
+func (s *GCPSigner) Algorithm() string { return s.alg }
+func (s *GCPSigner) KeyID() string     { return s.kid }
+
+func (s *GCPSigner) PublicJWK(ctx context.Context) (map[string]any, error) {
+	if s.jwk != nil {
+		return s.jwk, nil
+	}
+	// Fetch public key (PEM) from KMS
+	out, err := s.client.GetPublicKey(ctx, &kmspb.GetPublicKeyRequest{Name: s.versionName})
+	if err != nil {
+		return nil, err
+	}
+	block, _ := pem.Decode([]byte(out.Pem))
+	if block == nil {
+		return nil, errors.New("gcp kms returned no pem block")
+	}
+	pk, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	ec, ok := pk.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, errors.New("gcp kms public key is not ecdsa")
+	}
+	jwk := ECP256PublicJWK(ec, s.kid)
+	s.jwk = jwk
+	return jwk, nil
+}
+
+func (s *GCPSigner) Sign(ctx context.Context, unsigned []byte) ([]byte, error) {
+	if s.alg != AlgES256 {
+		return nil, errors.New("gcp signer only supports ES256")
+	}
+	h := sha256.Sum256(unsigned)
+	req := &kmspb.AsymmetricSignRequest{
+		Name: s.versionName,
+		Digest: &kmspb.Digest{
+			Digest: &kmspb.Digest_Sha256{Sha256: h[:]},
+		},
+	}
+	out, err := s.client.AsymmetricSign(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	// DER to JOSE r||s
+	r, sbig, ok := parseECDSADER(out.Signature)
+	if !ok {
+		return nil, errors.New("invalid ECDSA signature from GCP KMS")
+	}
+	rb := r.Bytes()
+	sb := sbig.Bytes()
+	sig := make([]byte, 64)
+	copy(sig[32-len(rb):32], rb)
+	copy(sig[64-len(sb):], sb)
+	return sig, nil
+}
+
+// ----- Azure Key Vault signer (ES256) -----
+type AzureSigner struct {
+	keyID   string // full key identifier URL including version
+	vault   string // vault URL
+	keyName string
+	version string
+	alg     string
+	kid     string
+	jwk     map[string]any
+	kclient *azkeys.Client
+}
+
+func NewAzureSigner(rec TrustKeyRecord) (Signer, error) {
+	cfg := map[string]any{}
+	if len(rec.ProviderConfig) > 0 {
+		_ = json.Unmarshal(rec.ProviderConfig, &cfg)
+	}
+	vaultURL, _ := cfg["vault_url"].(string)
+	keyID := rec.KeyRef
+	keyName := ""
+	version := rec.KeyVersion
+	if strings.HasPrefix(strings.ToLower(keyID), "https://") {
+		// full identifier; extract vault URL and possibly version
+		parts := strings.Split(strings.TrimPrefix(keyID, "https://"), "/")
+		if len(parts) >= 3 && parts[1] == "keys" {
+			vaultURL = "https://" + parts[0]
+			keyName = parts[2]
+			if len(parts) >= 4 {
+				version = parts[3]
+			}
+		}
+	} else {
+		// build from vault_url + key name
+		keyName = keyID
+	}
+	if vaultURL == "" || keyName == "" {
+		return nil, errors.New("azure vault_url and key name required")
+	}
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, err
+	}
+	kclient, err := azkeys.NewClient(vaultURL, cred, nil)
+	if err != nil {
+		return nil, err
+	}
+	// Build full key identifier URL with version if available
+	fullID := vaultURL + "/keys/" + keyName
+	if version != "" {
+		fullID += "/" + version
+	}
+	alg := rec.Alg
+	if alg == "" {
+		alg = AlgES256
+	}
+	kid := rec.Kid
+	if strings.TrimSpace(kid) == "" {
+		kid = "azure:" + fullID
+	}
+	var jwk map[string]any
+	if len(rec.JWKPub) > 0 {
+		_ = json.Unmarshal(rec.JWKPub, &jwk)
+	}
+	return &AzureSigner{keyID: fullID, vault: vaultURL, keyName: keyName, version: version, alg: alg, kid: kid, jwk: jwk, kclient: kclient}, nil
+}
+
+func (s *AzureSigner) Algorithm() string { return s.alg }
+func (s *AzureSigner) KeyID() string     { return s.kid }
+
+func (s *AzureSigner) PublicJWK(ctx context.Context) (map[string]any, error) {
+	if s.jwk != nil {
+		return s.jwk, nil
+	}
+	// Fetch key to extract public parameters
+	var version string
+	if s.version != "" {
+		version = s.version
+	}
+	resp, err := s.kclient.GetKey(ctx, s.keyName, version, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Key == nil || resp.Key.X == nil || resp.Key.Y == nil {
+		return nil, errors.New("azure key missing EC coordinates")
+	}
+	// Build JWK from coordinates
+	x := base64.RawURLEncoding.EncodeToString(resp.Key.X)
+	y := base64.RawURLEncoding.EncodeToString(resp.Key.Y)
+	jwk := map[string]any{"kty": "EC", "crv": "P-256", "alg": AlgES256, "use": "sig", "kid": s.kid, "x": x, "y": y}
+	s.jwk = jwk
+	return jwk, nil
+}
+
+func (s *AzureSigner) Sign(ctx context.Context, unsigned []byte) ([]byte, error) {
+	if s.alg != AlgES256 {
+		return nil, errors.New("azure signer only supports ES256")
+	}
+	h := sha256.Sum256(unsigned)
+	algo := azkeys.SignatureAlgorithmES256
+	res, err := s.kclient.Sign(ctx, s.keyName, s.version, azkeys.SignParameters{Algorithm: &algo, Value: h[:]}, nil)
+	if err != nil {
+		return nil, err
+	}
+	// Azure returns DER-encoded ECDSA signature
+	r, sbig, ok := parseECDSADER(res.KeyOperationResult.Result)
+	if !ok {
+		return nil, errors.New("invalid ECDSA signature from Azure KV")
+	}
+	rb := r.Bytes()
+	sb := sbig.Bytes()
+	sig := make([]byte, 64)
+	copy(sig[32-len(rb):32], rb)
+	copy(sig[64-len(sb):], sb)
+	return sig, nil
 }
 
 // parseECDSADER parses a minimal ASN.1 ECDSA signature (r,s)

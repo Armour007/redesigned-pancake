@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -13,11 +17,13 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 
 	database "github.com/Armour007/aura-backend/internal"
 	"github.com/Armour007/aura-backend/internal/api"
+	"github.com/Armour007/aura-backend/internal/audit"
 	"github.com/Armour007/aura-backend/internal/mesh"
 	"github.com/Armour007/aura-backend/internal/policy"
 	"github.com/Armour007/aura-backend/internal/rel"
@@ -55,6 +61,9 @@ func main() {
 			cancel()
 		}()
 	}
+	// Security headers
+	router.Use(api.CSPMiddleware())
+	router.Use(api.HSTSMiddlewareFromEnv())
 	// Metrics
 	router.Use(api.MetricsMiddleware())
 	// Assign a Request ID to every request for tracing
@@ -65,19 +74,26 @@ func main() {
 	// Apply CORS middleware. Default() allows all origins for development.
 	// For production, configure specific origins: cors.New(cors.Config{...})
 	// Replace the simple cors.Default() with this configuration:
+	strict := os.Getenv("AURA_CORS_STRICT")
 	config := cors.Config{
-		AllowAllOrigins:  true, // Allow requests from any origin (good for development)
+		AllowAllOrigins:  strict == "", // default permissive in dev; set AURA_CORS_STRICT=1 for strict mode
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "Authorization", "X-API-Key", "X-Request-ID", "Idempotency-Key", "AURA-Version"}, // Allow API key, request ID, idempotency and version headers
+		AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "Authorization", "X-API-Key", "X-Request-ID", "Idempotency-Key", "AURA-Version", "X-Aura-Signature", "X-Aura-Timestamp", "X-Aura-Nonce"},
 		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
-		AllowCredentials: true,
+		AllowCredentials: false,
 		MaxAge:           12 * time.Hour,
 	}
-	// Override allowed origins via env (comma-separated)
-	if origins := os.Getenv("AURA_CORS_ORIGINS"); origins != "" {
+	// Strict origins via env (comma-separated) or AURA_FRONTEND_BASE_URL
+	if origins := os.Getenv("AURA_CORS_ORIGINS"); origins != "" || os.Getenv("AURA_FRONTEND_BASE_URL") != "" {
 		config.AllowAllOrigins = false
-		// Trim spaces around each origin
-		parts := strings.Split(origins, ",")
+		// Build allow list
+		parts := []string{}
+		if o := os.Getenv("AURA_CORS_ORIGINS"); o != "" {
+			parts = append(parts, strings.Split(o, ",")...)
+		}
+		if f := os.Getenv("AURA_FRONTEND_BASE_URL"); f != "" {
+			parts = append(parts, f)
+		}
 		allow := make([]string, 0, len(parts))
 		for _, p := range parts {
 			if s := strings.TrimSpace(p); s != "" {
@@ -108,6 +124,111 @@ func main() {
 		for range ticker.C {
 			if database.DB != nil {
 				_, _ = database.DB.Exec(`UPDATE trust_keys SET active=false, deactivate_after=NULL WHERE active=true AND deactivate_after IS NOT NULL AND deactivate_after <= NOW()`)
+			}
+		}
+	}()
+
+	// Background job: periodically anchor federation gossip head per topic
+	go func() {
+		anchorOrg := strings.TrimSpace(os.Getenv("AURA_FEDERATION_ANCHOR_ORG_ID"))
+		if anchorOrg == "" {
+			return
+		}
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if database.DB == nil {
+				continue
+			}
+			for _, topic := range []string{"revocation", "key_rotation", "org_registry"} {
+				var head string
+				_ = database.DB.Get(&head, `SELECT hash FROM federation_gossip WHERE topic=$1 ORDER BY ts DESC, created_at DESC LIMIT 1`, topic)
+				if head == "" {
+					continue
+				}
+				date := time.Now().UTC().Format("2006-01-02")
+				ext := "federation:" + topic
+				// Upsert anchor similar to SetAuditAnchor
+				_, err := database.DB.Exec(`INSERT INTO audit_anchors(org_id, anchor_date, root_hash, external_ref) VALUES ($1,$2,$3,$4)
+					ON CONFLICT (org_id, anchor_date) DO UPDATE SET root_hash=EXCLUDED.root_hash, external_ref=EXCLUDED.external_ref`, anchorOrg, date, head, ext)
+				if err == nil {
+					_ = audit.Append(context.Background(), uuid.MustParse(anchorOrg), "audit_anchor_set", gin.H{"date": date, "root_hash": head, "external_ref": ext}, nil, nil)
+				}
+			}
+		}
+	}()
+
+	// Optional: background publish to peers
+	go func() {
+		if os.Getenv("AURA_GOSSIP_PUBLISH_ENABLE") != "1" {
+			return
+		}
+		client := &http.Client{Timeout: 5 * time.Second}
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			if database.DB == nil {
+				continue
+			}
+			// Load peers
+			type peer struct {
+				URL string `db:"url"`
+			}
+			peers := []peer{}
+			_ = database.DB.Select(&peers, `SELECT url FROM federation_peers`)
+			if len(peers) == 0 {
+				continue
+			}
+			// Gather recent messages (last minute) in batches
+			var rows []struct {
+				OrgID   string    `db:"org_id"`
+				Topic   string    `db:"topic"`
+				Ts      time.Time `db:"ts"`
+				Nonce   string    `db:"nonce"`
+				Payload []byte    `db:"payload"`
+				JWS     string    `db:"jws"`
+			}
+			_ = database.DB.Select(&rows, `SELECT org_id::text, topic, ts, nonce, payload, jws FROM federation_gossip WHERE ts > NOW() - INTERVAL '1 minute' ORDER BY ts ASC LIMIT 500`)
+			if len(rows) == 0 {
+				continue
+			}
+			// Prepare payload
+			type msg struct {
+				OrgID   string          `json:"org_id"`
+				Topic   string          `json:"topic"`
+				Ts      time.Time       `json:"ts"`
+				Nonce   string          `json:"nonce"`
+				Payload json.RawMessage `json:"payload"`
+				JWS     string          `json:"jws"`
+			}
+			batch := make([]msg, 0, len(rows))
+			for _, r := range rows {
+				batch = append(batch, msg{OrgID: r.OrgID, Topic: r.Topic, Ts: r.Ts, Nonce: r.Nonce, Payload: json.RawMessage(r.Payload), JWS: r.JWS})
+			}
+			body, _ := json.Marshal(map[string]any{"messages": batch})
+			for _, p := range peers {
+				req, _ := http.NewRequest(http.MethodPost, strings.TrimRight(p.URL, "/")+"/v2/federation/gossip", strings.NewReader(string(body)))
+				req.Header.Set("Content-Type", "application/json")
+				// best-effort send; ignore errors
+				_, _ = client.Do(req)
+			}
+
+			// Attempt to auto-merge when multiple heads exist for a topic to aid convergence
+			anchorOrg := strings.TrimSpace(os.Getenv("AURA_FEDERATION_ANCHOR_ORG_ID"))
+			if anchorOrg != "" {
+				for _, topic := range []string{"revocation", "key_rotation", "org_registry"} {
+					var heads []string
+					_ = database.DB.Select(&heads, `
+						SELECT g1.hash FROM federation_gossip g1
+						WHERE g1.topic=$1 AND NOT EXISTS (
+							SELECT 1 FROM federation_gossip g2
+							WHERE g2.topic=$1 AND (g2.prev_hash=g1.hash OR (g2.parents IS NOT NULL AND g1.hash = ANY(g2.parents)))
+						) ORDER BY g1.ts DESC LIMIT 5`, topic)
+					if len(heads) >= 2 {
+						payload := json.RawMessage(`{"merge":true}`)
+						_, _, _, _, _ = api.CreateMergeGossip(context.Background(), anchorOrg, topic, heads, payload, "")
+					}
+				}
 			}
 		}
 	}()
@@ -193,9 +314,15 @@ func main() {
 	coreRoutes.Use(api.RequestSigningMiddleware())
 	// Apply rate limiting to core verification endpoints (env-configurable, optional Redis)
 	coreRoutes.Use(api.RateLimitMiddlewareFromEnv())
+	// Optional mTLS enforcement for v1 core routes
+	if os.Getenv("AURA_MTLS_REQUIRE_V1") == "1" {
+		coreRoutes.Use(api.AgentCertBindingMiddleware())
+	}
 	{
 		// /v1/verify uses API Key Auth via middleware above
 		coreRoutes.POST("/verify", api.HandleVerifyRequest)
+		// Agent CSR issue (MVP): protected by attestation or API key; returns client cert
+		coreRoutes.POST("/agents/:agentId/csr", api.AcceptAgentCSR)
 		// Trust Graph v1 endpoints (batch tuples, relation check, expand)
 		coreRoutes.POST("/tuples", api.UpsertTuplesV1)
 		coreRoutes.POST("/check", api.CheckRelationV1)
@@ -207,25 +334,56 @@ func main() {
 	v2.Use(api.AttestOrAPIKeyAuthMiddleware())
 	v2.Use(api.RequestSigningMiddleware())
 	v2.Use(api.RateLimitMiddlewareFromEnv())
+	// Optional mTLS enforcement for v2 endpoints
+	if os.Getenv("AURA_MTLS_REQUIRE_V2") == "1" {
+		v2.Use(api.AgentCertBindingMiddleware())
+	}
 	{
 		v2.POST("/verify", api.HandleVerifyV2)
 		v2.GET("/decisions/search", api.GetRecentDecisionTraces)
 		v2.GET("/decisions/:traceId", api.GetDecisionTrace)
+		// Cognitive Firewall endpoints
+		v2.POST("/guard", api.InlineGuard)
+		v2.POST("/policy/author/nl-compile", api.CompilePolicyFromNL)
+		v2.POST("/policy/tests/run", api.RunPolicyTests)
+		v2.POST("/policy/preview", api.PreviewPolicyAgainstTraces)
+		// Attestation and certs
+		v2.POST("/attest", api.HandleAttest)
+		v2.POST("/certs/issue", api.IssueClientCert)
+		v2.GET("/certs", api.ListClientCerts)
+		v2.POST("/certs/:serial/revoke", api.RevokeClientCert)
+		v2.GET("/certs/crl.pem", api.GetCRL)
+		// Runtime approvals polling
+		v2.GET("/approvals/:traceId", api.GetApprovalStatus)
 		v2.GET("/signals/risk", api.GetRiskSignals)
 		v2.POST("/signals/risk/alerts", api.RaiseRiskAlert)
 		v2.DELETE("/signals/risk/alerts", api.ClearRiskAlert)
 		v2.GET("/reputation", api.GetReputation)
 		v2.GET("/policy/recommendations", api.GetPolicyRecommendations)
+		v2.GET("/policy/packs", api.ListPolicyPacks)
+		v2.GET("/policy/packs/:packId", api.GetPolicyPack)
 		v2.GET("/policies/:policyId/versions", api.ListPolicyVersionsV2)
 		v2.GET("/audit/ledger", api.GetAuditLedger)
 		v2.GET("/audit/verify", api.VerifyAuditChain)
 		v2.POST("/audit/anchor", api.SetAuditAnchor)
 		v2.GET("/audit/anchor", api.GetAuditAnchor)
+		v2.GET("/network/info", api.GetNetworkInfo)
 		v2.POST("/tokens/introspect", api.IntrospectTrustToken)
 		v2.POST("/federation/contracts", api.CreateFederationContract)
 		v2.GET("/federation/contracts", api.ListFederationContracts)
 		v2.POST("/federation/events", api.RecordFederationBoundaryEvent)
 		v2.POST("/federation/delegations", api.CreateFederationDelegation)
+
+		// Federation gossip protocol (minimal proofs + hash-chaining)
+		v2.POST("/federation/gossip", api.IngestGossip)
+		v2.GET("/federation/gossip", api.PullGossip)
+		v2.POST("/federation/gossip/publish", api.PublishGossip)
+		v2.POST("/federation/gossip/merge", api.MergeGossip)
+
+		// Federation peers management
+		v2.GET("/federation/peers", api.ListFederationPeers)
+		v2.POST("/federation/peers", api.AddFederationPeer)
+		v2.DELETE("/federation/peers/:peerId", api.DeleteFederationPeer)
 
 		// Trust Registry
 		v2.POST("/registry/orgs", api.CreateRegistryOrg)
@@ -242,15 +400,26 @@ func main() {
 		public.GET("/.well-known/aura-jwks.json", api.JWKS)
 		// Org-scoped JWKS
 		public.GET("/.well-known/aura/:orgId/jwks.json", api.OrgJWKS)
+		// DID resolver for did:aura:org:<orgId>
+		public.GET("/resolve", api.ResolveDID)
+		public.GET("/resolve/:did", api.ResolveDID)
 		// Public Trust Registry
 		public.GET("/registry/public/orgs", api.PublicListRegistryOrgs)
 		public.GET("/registry/public/agents", api.PublicListRegistryAgents)
+		// Public AURA-ID registry endpoint (rate-limited)
+		public.GET("/aura-id/:id", api.GetAuraID)
+		// Slack interactive webhook for runtime approvals (no auth; restrict via Slack app config)
+		public.POST("/v2/approvals/slack", api.SlackApprovalWebhook)
+		// SSO entry points (stubbed unless AURA_SSO_ENABLE=1)
+		public.GET("/sso/:provider/login", api.SSOLogin)
+		public.GET("/sso/:provider/callback", api.SSOCallback)
 	}
 
 	// --- Protected Routes (Require User JWT Auth) ---
 	// Create a new group for routes that need authentication
 	// Health and readiness
 	// API Docs
+	router.GET("/metrics", func(c *gin.Context) { promhttp.Handler().ServeHTTP(c.Writer, c.Request) })
 	router.GET("/openapi.json", api.OpenAPIJSON)
 	router.GET("/docs", api.SwaggerUI)
 	router.GET("/healthz", func(c *gin.Context) { c.Status(200) })
@@ -316,6 +485,9 @@ func main() {
 		admin.GET("/webhooks/dlq", api.ListWebhookDLQ)
 		admin.POST("/webhooks/dlq/requeue", api.RequeueWebhookDLQ)
 		admin.POST("/webhooks/dlq/delete", api.DeleteWebhookDLQ)
+		// Devices (read-only list)
+		admin.GET("/devices", api.AdminListDevices)
+		admin.GET("/devices/detail", api.AdminListDevicesDetail)
 		// Trust tuple admin utilities
 		admin.GET("/rel/tuples", api.AdminListTuples)
 		admin.DELETE("/rel/tuples", api.AdminDeleteTuples)
@@ -323,6 +495,8 @@ func main() {
 
 	protectedRoutes := router.Group("/")
 	protectedRoutes.Use(api.AuthMiddleware()) // Apply the middleware HERE
+	// Apply CSRF for state-changing dashboard calls if enabled
+	protectedRoutes.Use(api.CSRFMiddlewareFromEnv())
 	{
 		// User profile endpoints
 		protectedRoutes.GET("/me", api.GetMe)
@@ -333,6 +507,8 @@ func main() {
 		// All routes defined within this group will now require a valid JWT
 		orgRoutes := protectedRoutes.Group("/organizations/:orgId")
 		orgRoutes.Use(api.OrgMemberMiddleware())
+		// Enforce least-privilege for non-admin roles on state-changing actions
+		orgRoutes.Use(api.ReadOnlyGuardMiddleware())
 		// Apply idempotency for POST requests with Idempotency-Key header
 		orgRoutes.Use(api.IdempotencyMiddlewareFromEnv())
 		{
@@ -395,6 +571,13 @@ func main() {
 				tk.POST("/:keyId/deactivate", api.RequireOrgAdmin(), api.DeactivateTrustKey)
 			}
 
+			// Trust token revocations
+			revRoutes := orgRoutes.Group("/trust-tokens")
+			{
+				revRoutes.GET("/revocations", api.RequireOrgAdmin(), api.GetRevocations)
+				revRoutes.POST("/revocations", api.RequireOrgAdmin(), api.RevokeTrustToken)
+			}
+
 			// Webhook endpoints management
 			webhookRoutes := orgRoutes.Group("/webhooks")
 			{
@@ -407,9 +590,71 @@ func main() {
 			{
 				logRoutes.GET("", api.GetEventLogs)
 			}
+
+			// AURA-ID issuance and listing (admin)
+			orgRoutes.POST("/aura-identities", api.RequireOrgAdmin(), api.CreateAuraID)
+			orgRoutes.GET("/aura-identities", api.RequireOrgAdmin(), api.ListAuraIDs)
+
+			// Trust DNA & reputation graph (admin)
+			orgRoutes.POST("/trust-dna", api.RequireOrgAdmin(), api.SubmitTrustDNA)
+			// Regulator view endpoints (admin)
+			orgRoutes.GET("/regulator/snapshot", api.RequireOrgAdmin(), api.RegulatorSnapshot)
+			orgRoutes.GET("/regulator/audit-bundle", api.RequireOrgAdmin(), api.ExportAuditBundle)
+			orgRoutes.GET("/regulator/compliance-mapping", api.RequireOrgAdmin(), api.GetComplianceMapping)
+			orgRoutes.GET("/regulator/audit-export", api.RequireOrgAdmin(), api.ExportAuditData)
+			orgRoutes.POST("/regulator/audit-export/schedule", api.RequireOrgAdmin(), api.SetAuditExportSchedule)
+			orgRoutes.GET("/regulator/audit-export/schedule", api.RequireOrgAdmin(), api.GetAuditExportSchedule)
+			orgRoutes.POST("/trust-dna/near", api.RequireOrgAdmin(), api.GetTrustDNANear)
+			orgRoutes.GET("/trust-dna/aggregate", api.RequireOrgAdmin(), api.GetTrustDNAAggregate)
 		}
 		// Add other protected routes here if needed (e.g., /user/profile)
 	}
+
+	// SCIM API (token-protected)
+	scim := router.Group("/scim/v2")
+	{
+		scim.GET("/Users", api.SCIMListUsers)
+		scim.POST("/Users", api.SCIMCreateUser)
+		scim.PATCH("/Users/:id", api.SCIMPatchUser)
+		scim.GET("/Groups", api.SCIMListGroups)
+	}
+
+	// Optional TLS with client auth
+	certFile := os.Getenv("AURA_TLS_CERT_FILE")
+	keyFile := os.Getenv("AURA_TLS_KEY_FILE")
+	clientCAFile := os.Getenv("AURA_CLIENT_CA_FILE")
+	clientAuthMode := os.Getenv("AURA_TLS_CLIENT_AUTH") // require|verify|off
+	if certFile != "" && keyFile != "" {
+		srv := &http.Server{Addr: ":" + port, Handler: router}
+		// TLS config
+		cfg := &tls.Config{}
+		if clientCAFile != "" {
+			caBytes, err := ioutil.ReadFile(clientCAFile)
+			if err == nil {
+				pool := x509.NewCertPool()
+				if pool.AppendCertsFromPEM(caBytes) {
+					cfg.ClientCAs = pool
+				}
+			}
+		}
+		switch strings.ToLower(clientAuthMode) {
+		case "require":
+			cfg.ClientAuth = tls.RequireAndVerifyClientCert
+		case "verify":
+			cfg.ClientAuth = tls.VerifyClientCertIfGiven
+		default:
+			cfg.ClientAuth = tls.NoClientCert
+		}
+		srv.TLSConfig = cfg
+		log.Println("HTTPS server with TLS enabled on :" + port)
+		err := srv.ListenAndServeTLS(certFile, keyFile)
+		if err != nil {
+			log.Fatal("Failed to start TLS server:", err)
+		}
+		return
+	}
+	// Start background audit scheduler if configured
+	api.StartAuditScheduler()
 
 	err := router.Run(":" + port)
 	if err != nil {

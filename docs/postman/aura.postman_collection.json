@@ -1,0 +1,57 @@
+{
+  "info": {
+    "name": "Aura API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "item": [
+    {
+      "name": "Verify",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key":"Content-Type","value":"application/json"},
+          {"key":"X-API-Key","value":"{{AURA_API_KEY}}"},
+          {"key":"AURA-Version","value":"2025-10-01"}
+        ],
+        "url": {
+          "raw": "{{AURA_API_BASE}}/v1/verify",
+          "host": ["{{AURA_API_BASE}}"],
+          "path": ["v1","verify"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"agent_id\": \"{{AGENT_ID}}\",\n  \"request_context\": {\n    \"action\": \"read\",\n    \"resource\": \"doc:123\"\n  }\n}"
+        }
+      }
+    },
+    {
+      "name": "JWKS (global)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{AURA_API_BASE}}/.well-known/aura-jwks.json",
+          "host": ["{{AURA_API_BASE}}"],
+          "path": [".well-known","aura-jwks.json"]
+        }
+      }
+    },
+    {
+      "name": "JWKS (org)",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{AURA_API_BASE}}/.well-known/aura/{{ORG_ID}}/jwks.json",
+          "host": ["{{AURA_API_BASE}}"],
+          "path": [".well-known","aura","{{ORG_ID}}","jwks.json"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {"key":"AURA_API_BASE","value":"http://localhost:8081"},
+    {"key":"AURA_API_KEY","value":"aura_sk_..."},
+    {"key":"AGENT_ID","value":"00000000-0000-0000-0000-000000000000"},
+    {"key":"ORG_ID","value":"00000000-0000-0000-0000-000000000000"}
+  ]
+}
