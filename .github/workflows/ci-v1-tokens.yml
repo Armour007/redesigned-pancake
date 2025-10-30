@@ -1,0 +1,85 @@
+name: CI - Backend v1 Tokens
+
+on:
+  push:
+    branches: [ main, finish/aura-prod-ready ]
+  pull_request:
+
+jobs:
+  backend-v1-tokens:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Install tools (psql, jq)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client jq
+
+      - name: Bring up DB via docker compose
+        run: |
+          docker compose -f docker-compose.yml up -d db
+
+      - name: Go mod download
+        working-directory: backend
+        run: |
+          go mod download
+
+      - name: Run backend unit tests
+        working-directory: backend
+        run: |
+          go test ./...
+
+      - name: Start backend (background)
+        run: |
+          nohup bash -c 'cd backend && \
+            PORT=8081 \
+            AURA_FRONTEND_BASE_URL=http://localhost:5173 \
+            AURA_API_BASE_URL=http://localhost:8081 \
+            DB_HOST=localhost DB_PORT=5432 DB_USER=aura_user DB_PASSWORD=your_strong_password DB_NAME=aura_db DB_SSLMODE=disable \
+            JWT_SECRET=dev_jwt_secret_123 \
+            go run ./cmd/server' > backend.log 2>&1 &
+          echo $! > backend.pid
+
+      - name: Wait for backend /healthz
+        run: |
+          for i in {1..60}; do
+            if curl -sSf http://localhost:8081/healthz >/dev/null; then
+              echo "backend healthy"; exit 0; fi; sleep 1; done
+          echo "backend failed to become healthy" && tail -n +1 backend.log && exit 1
+
+      - name: Run v1 token smoke (bash)
+        env:
+          AURA_API_BASE_URL: http://localhost:8081
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: aura_user
+          DB_PASSWORD: your_strong_password
+          DB_NAME: aura_db
+          DB_SSLMODE: disable
+        run: |
+          chmod +x scripts/token-v1-smoke.sh
+          ./scripts/token-v1-smoke.sh | tee smoke-output.txt
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-v1-tokens-logs
+          path: |
+            backend.log
+            smoke-output.txt
+
+      - name: Teardown
+        if: always()
+        run: |
+          if [ -f backend.pid ]; then kill $(cat backend.pid) || true; fi
+          docker compose -f docker-compose.yml down -v

@@ -27,4 +27,4 @@ RUN npm install --omit=dev --no-audit --prefer-offline
 EXPOSE 3000
 
 # Start the server
-CMD ["node", "/app/build"]
+CMD ["node", "build"]

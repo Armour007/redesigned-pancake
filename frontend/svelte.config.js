@@ -1,5 +1,5 @@
 // @ts-nocheck
-import adapterAuto from '@sveltejs/adapter-auto';
+import adapterNode from '@sveltejs/adapter-node';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { mdsvex } from 'mdsvex';
 import remarkGfm from 'remark-gfm';
@@ -20,9 +20,8 @@ const config = {
 	],
 
 	kit: {
-		// Use adapter-auto to avoid requiring adapter-node during tooling without node_modules installed.
-		// It will pick the best available adapter (including node) when present.
-		adapter: adapterAuto()
+		// Explicitly use adapter-node so Docker builds output to /build
+		adapter: adapterNode()
 	}
 };
 
