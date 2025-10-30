@@ -57,6 +57,46 @@ go run .\cmd\server
 
 Note: Running `go run ./cmd/server` from the repository root will fail with “go: cannot find main module…”. Always run from `backend/` or use the provided tasks.
 
+### Trust tokens v1 (issue/verify/revoke)
+
+Endpoints:
+- POST `/v1/token/issue` — issues a compact JWT trust token
+- POST `/v1/token/verify` — verifies HS256 or EdDSA signatures and returns validity + claims
+- POST `/v1/token/revoke` — records org-scoped JTI revocation
+
+Signing order of precedence when issuing:
+1) Organization active trust key in `trust_keys` (local Ed25519 fast path or KMS providers: Vault/AWS/GCP/Azure)
+2) Env Ed25519 fallback via `AURA_TRUST_ED25519_PRIVATE_KEY` (base64url/base64 of 32-byte seed or 64-byte private key)
+3) HS256 via `AURA_TRUST_TOKEN_SIGNING_KEY` or `JWT_SECRET`
+
+Important env vars:
+- `AURA_TRUST_ED25519_PRIVATE_KEY` — base64url/base64 Ed25519 seed (32B) or private key (64B). Optional.
+- `AURA_TRUST_TOKEN_SIGNING_KEY` — HS256 secret (fallback if no Ed25519 configured).
+- `JWT_SECRET` — also used as HS256 fallback (and for login auth).
+
+PowerShell examples:
+
+```powershell
+# Issue
+$body = @{ org_id = "org_demo"; sub = "user_1"; aud = "svc"; action = "read"; resource = "doc:1"; ttl_sec = 300 } | ConvertTo-Json -Compress
+$resp = Invoke-RestMethod -Method POST -Uri "http://localhost:8081/v1/token/issue" -Body $body -ContentType 'application/json'
+
+# Verify
+Invoke-RestMethod -Method POST -Uri "http://localhost:8081/v1/token/verify" -Body (@{ token = $resp.token } | ConvertTo-Json -Compress) -ContentType 'application/json'
+
+# Revoke (by JTI)
+Invoke-RestMethod -Method POST -Uri "http://localhost:8081/v1/token/revoke" -Body (@{ org_id = "org_demo"; jti = $resp.jti; exp = [int64]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 300) } | ConvertTo-Json -Compress) -ContentType 'application/json'
+```
+
+Optional smoke script:
+
+```powershell
+scripts/token-v1-smoke.ps1
+# Tries to insert a local Ed25519 trust key via psql (if available),
+# issues a v1 token, verifies + revokes it, then calls /v2/tokens/introspect twice
+# to assert replay prevention when mark_used=true.
+```
+
 Migrations: create tables under backend/db/migrations (use your preferred tool to apply).
 
 Key API highlights:
