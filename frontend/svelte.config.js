@@ -1,5 +1,5 @@
 // @ts-nocheck
-import adapterNode from '@sveltejs/adapter-node';
+import adapterVercel from '@sveltejs/adapter-vercel';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { mdsvex } from 'mdsvex';
 import remarkGfm from 'remark-gfm';
@@ -20,8 +20,8 @@ const config = {
 	],
 
 	kit: {
-		// Explicitly use adapter-node so Docker builds output to /build
-		adapter: adapterNode()
+		// Use adapter-vercel for Vercel deployment
+		adapter: adapterVercel()
 	}
 };
 
