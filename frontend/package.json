@@ -25,8 +25,6 @@
 		"e2e:install": "playwright install --with-deps"
 	},
 	"devDependencies": {
-		"@sveltejs/adapter-auto": "^6.1.0",
-		"@sveltejs/adapter-node": "^5.4.0",
 		"@sveltejs/adapter-vercel": "^3.0.0",
 	"@sveltejs/kit": "^1.29.0",
 		"mdsvex": "^0.11.0",
