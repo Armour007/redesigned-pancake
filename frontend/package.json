@@ -14,6 +14,7 @@
 		"preview": "vite preview",
 		"start": "node build",
 		"prepare": "echo 'skip prepare during install'",
+		"vercel-build": "npm install --legacy-peer-deps && vite build",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"lint": "eslint .",
