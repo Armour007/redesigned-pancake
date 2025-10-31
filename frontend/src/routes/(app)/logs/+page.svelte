@@ -12,12 +12,12 @@
   }
 </script>
 
-<h1 class="text-3xl font-bold mb-6">Event Logs</h1>
+<h1 class="text-3xl font-bold mb-6 a-text-gradient">Event Logs</h1>
 {#if data?.error}
   <Alert variant="error">{data.error}</Alert>
 {/if}
 
-<div class="overflow-x-auto">
+<div class="overflow-x-auto a-card a-ribbon">
   <table class="min-w-full text-left text-sm">
     <thead class="bg-[#1A1A1A] text-gray-300">
       <tr>

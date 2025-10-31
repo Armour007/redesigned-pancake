@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AURA mark">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#007AFF"/>
+      <stop offset="100%" stop-color="#7B61FF"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="256" height="256" rx="64" fill="url(#g1)"/>
+  <!-- Stylized A -->
+  <g filter="url(#glow)">
+    <path d="M128 52 L200 200 H176 L156 160 H100 L80 200 H56 L128 52 Z M117 138 H147 L132 106 L117 138 Z" fill="white" fill-opacity="0.95"/>
+  </g>
+</svg>

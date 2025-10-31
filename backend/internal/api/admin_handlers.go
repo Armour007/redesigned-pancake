@@ -78,7 +78,8 @@ func TestSMTP(c *gin.Context) {
 // GET /admin/queue/dlq?count=50
 func ListDLQ(c *gin.Context) {
 	if redisClient == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "queue disabled"})
+		// Graceful noop when queue is disabled: return empty result with totals=0
+		c.JSON(http.StatusOK, gin.H{"items": []any{}, "count": 0, "total": 0, "next_before_id": ""})
 		return
 	}
 	count := 50
@@ -161,7 +162,8 @@ func ListDLQ(c *gin.Context) {
 // GET /admin/webhooks/dlq?count=50
 func ListWebhookDLQ(c *gin.Context) {
 	if redisClient == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "queue disabled"})
+		// Graceful noop when queue is disabled: return empty result with totals=0
+		c.JSON(http.StatusOK, gin.H{"items": []any{}, "count": 0, "total": 0, "next_before_id": ""})
 		return
 	}
 	count := 50

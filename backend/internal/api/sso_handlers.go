@@ -75,8 +75,8 @@ func loadOIDCConfig(provider string) (*oidcProviderConfig, error) {
 }
 
 func signState(claims jwtlib.MapClaims) (string, error) {
-	sec := os.Getenv("JWT_SECRET")
-	if strings.TrimSpace(sec) == "" {
+	sec, err := utils.GetJwtSecretString()
+	if err != nil || strings.TrimSpace(sec) == "" {
 		return "", errors.New("JWT_SECRET not set")
 	}
 	token := jwtlib.NewWithClaims(jwtlib.SigningMethodHS256, claims)
@@ -84,8 +84,8 @@ func signState(claims jwtlib.MapClaims) (string, error) {
 }
 
 func verifyState(state string) (jwtlib.MapClaims, error) {
-	sec := os.Getenv("JWT_SECRET")
-	if strings.TrimSpace(sec) == "" {
+	sec, err := utils.GetJwtSecretString()
+	if err != nil || strings.TrimSpace(sec) == "" {
 		return nil, errors.New("JWT_SECRET not set")
 	}
 	tok, err := jwtlib.Parse(state, func(token *jwtlib.Token) (interface{}, error) {

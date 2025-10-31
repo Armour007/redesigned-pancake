@@ -19,12 +19,12 @@ WORKDIR /app
 # Copy the built app
 COPY --from=builder /app/build ./build
 
-# Install runtime dependencies required by the build output
+# Install runtime dependencies required by the adapter-node output (has its own package.json)
 WORKDIR /app/build
 RUN npm install --omit=dev --no-audit --prefer-offline
 
 # Expose the default port used by SvelteKit adapter-node
 EXPOSE 3000
 
-# Start the server
-CMD ["node", "build"]
+# Start the server from the build directory
+CMD ["node", "."]

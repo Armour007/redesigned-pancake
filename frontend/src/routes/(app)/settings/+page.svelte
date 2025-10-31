@@ -80,7 +80,7 @@
   }
 </script>
 
-<h1 class="text-3xl font-bold mb-6">Settings</h1>
+<h1 class="text-3xl font-bold mb-6 a-text-gradient a-header">Settings</h1>
 {#if data?.error}
   <Alert variant="error">{data.error}</Alert>
 {/if}
@@ -92,7 +92,7 @@
 {/if}
 
 <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
-  <section class="bg-[#151515] rounded-lg border border-white/10 p-6">
+  <section class="a-card a-ribbon">
     <h2 class="text-xl font-semibold mb-4">Profile</h2>
     <div class="space-y-4">
       <div>
@@ -109,7 +109,7 @@
     </div>
   </section>
 
-  <section class="bg-[#151515] rounded-lg border border-white/10 p-6">
+  <section class="a-card a-ribbon">
     <h2 class="text-xl font-semibold mb-4">Change password</h2>
     <div class="space-y-4">
       <div>
@@ -126,7 +126,7 @@
     </div>
   </section>
 
-  <section class="bg-[#151515] rounded-lg border border-white/10 p-6 xl:col-span-2">
+  <section class="a-card a-ribbon xl:col-span-2">
     <h2 class="text-xl font-semibold mb-4">Organization</h2>
     <div class="space-y-4 max-w-xl">
       <div>
@@ -139,7 +139,7 @@
     </div>
   </section>
 
-  <section class="bg-[#151515] rounded-lg border border-white/10 p-6 xl:col-span-2">
+  <section class="a-card a-ribbon xl:col-span-2">
     <h2 class="text-xl font-semibold mb-4">Organization admin</h2>
     {#if orgId}
       <div class="grid sm:grid-cols-2 gap-4">

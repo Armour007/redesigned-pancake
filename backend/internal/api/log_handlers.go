@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	database "github.com/Armour007/aura-backend/internal"
@@ -39,15 +40,19 @@ func GetEventLogs(c *gin.Context) {
 		}
 	}
 
-	// Build query
-	query := `SELECT id, timestamp, event_type, decision, decision_reason, request_details, agent_id, client_ip_address, api_key_prefix_used
+	// Build query with correct positional placeholders
+	base := `SELECT id, timestamp, event_type, decision, decision_reason, request_details, agent_id, client_ip_address, api_key_prefix_used
 			  FROM event_logs WHERE organization_id = $1`
+	query := base
 	args := []any{orgId}
+	// Optional agent filter
 	if agentId != "" {
 		query += " AND agent_id = $2"
 		args = append(args, agentId)
 	}
-	query += " ORDER BY timestamp DESC LIMIT $3"
+	// LIMIT placeholder depends on number of args so far
+	limitPos := len(args) + 1
+	query += " ORDER BY timestamp DESC LIMIT $" + strconv.Itoa(limitPos)
 	args = append(args, limit)
 
 	// Since request_details is jsonb, scan into raw bytes

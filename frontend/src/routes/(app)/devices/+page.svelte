@@ -68,11 +68,11 @@
 
 <div class="space-y-6">
   <div class="flex items-center justify-between">
-    <h1 class="text-lg font-semibold">Devices</h1>
-    <button on:click={loadAll} class="px-3 py-2 rounded bg-white/10 hover:bg-white/20">Refresh</button>
+    <h1 class="text-3xl font-bold a-text-gradient a-header">Devices</h1>
+    <button on:click={loadAll} class="px-3 py-2 rounded a-gradient text-white hover:opacity-90">Refresh</button>
   </div>
 
-  <div class="p-3 rounded border border-white/10 bg-black/20 flex items-center gap-3">
+  <div class="a-card a-ribbon flex items-center gap-3">
     <label for="subj" class="text-sm text-gray-400">Subject CN</label>
     <input id="subj" bind:value={subjectCN} class="px-3 py-2 rounded bg-black/30 border border-white/10" placeholder="agent-123@org" />
     <label for="days" class="text-sm text-gray-400">Days</label>
@@ -80,13 +80,13 @@
   </div>
 
   <div>
-    <h2 class="text-sm font-semibold text-gray-300 mb-2">Known Devices</h2>
+    <h2 class="text-sm font-semibold text-gray-300 mb-2 a-header">Known Devices</h2>
     {#if devices.length === 0}
       <div class="text-gray-400 text-sm">No devices yet. Call POST /v2/attest first.</div>
     {:else}
       <div class="space-y-3">
         {#each devices as d}
-          <div class="p-3 rounded border border-white/10 bg-black/20">
+          <div class="a-card">
             <div class="text-sm"><span class="font-mono text-xs">{d.id}</span>{#if d.org_name}&nbsp;<span class="text-xs text-gray-400">• {d.org_name}</span>{/if}</div>
             <div class="text-xs text-gray-400 break-all">fp: {d.fingerprint}</div>
             <div class="text-xs">provider: {d.provider || '—'} • posture_ok: {d.posture_ok ? 'true' : 'false'} • last_attested_at: {d.last_attested_at || '—'}</div>
@@ -96,7 +96,7 @@
               </div>
             {/if}
             <div class="mt-2">
-              <button class="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60" on:click={() => issueCert(d.id)} disabled={!d.posture_ok}>Issue cert</button>
+              <button class="px-2 py-1 rounded a-gradient text-white hover:opacity-90 disabled:opacity-60" on:click={() => issueCert(d.id)} disabled={!d.posture_ok}>Issue cert</button>
             </div>
           </div>
         {/each}
@@ -105,13 +105,13 @@
   </div>
 
   <div>
-    <h2 class="text-sm font-semibold text-gray-300 mb-2">Client Certificates</h2>
+    <h2 class="text-sm font-semibold text-gray-300 mb-2 a-header">Client Certificates</h2>
     {#if certs.length === 0}
       <div class="text-gray-400 text-sm">No client certs yet.</div>
     {:else}
       <div class="space-y-3">
         {#each certs as c}
-          <div class="p-3 rounded border border-white/10 bg-black/20">
+          <div class="a-card">
             <div class="text-sm">serial: <span class="font-mono text-xs">{c.serial}</span> • subject: {c.subject}</div>
             <div class="text-xs text-gray-400">device: {c.device_id || '—'} • nb: {c.not_before} • na: {c.not_after}</div>
             <div class="mt-2">

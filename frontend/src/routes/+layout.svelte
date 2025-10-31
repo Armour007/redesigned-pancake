@@ -1,5 +1,7 @@
 <script lang="ts">
   import '../app.css';
+  import Logo from '$lib/components/Logo.svelte';
+  import NavSpinner from '$lib/components/NavSpinner.svelte';
 </script>
 
 <svelte:head>
@@ -16,16 +18,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
-<div class="min-h-screen bg-slate-950 text-slate-100 font-sans">
+<div class="min-h-screen text-slate-100 font-sans" style="background: radial-gradient(60% 60% at 50% 35%, rgba(51,195,255,0.08), rgba(138,77,255,0.06) 40%, transparent 70%), #0B0D10;">
   <!-- Nav -->
-  <header class="sticky top-0 z-50 backdrop-blur bg-slate-950/60 ring-1 ring-white/10">
+  <header class="sticky top-0 z-50 a-glass">
     <div class="container mx-auto px-6 h-14 flex items-center justify-between">
-      <a href="/" class="flex items-center gap-2">
-        <img src="/favicon.svg" alt="AURA" class="h-6 w-6" />
-        <span class="font-semibold tracking-tight">AURA</span>
-      </a>
+      <Logo size="sm" wordmark glow />
       <nav class="hidden sm:flex items-center gap-6 text-sm text-indigo-200">
-        <a class="hover:text-white" href="#features">Product</a>
+  <a class="hover:text-white" href="/product">Product</a>
         <a class="hover:text-white" href="/customers">Customers</a>
         <a class="hover:text-white" href="/docs">Docs</a>
         <a class="hover:text-white" href="/blog">Blog</a>
@@ -34,7 +33,8 @@
         <a class="hover:text-white" href="/contact">Contact</a>
         <a class="hover:text-white" href="https://github.com/Armour007/aura" target="_blank" rel="noopener noreferrer">GitHub</a>
         <a class="ml-2 inline-flex items-center rounded-md bg-white/10 hover:bg-white/20 ring-1 ring-white/20 px-3 py-1.5 text-white" href="/login">Sign in</a>
-        <a class="inline-flex items-center rounded-md bg-indigo-500 hover:bg-indigo-400 text-white px-3 py-1.5" href="/register">Get started</a>
+        <a class="inline-flex items-center rounded-md a-gradient hover:opacity-90 text-white px-3 py-1.5" href="/register">Get started</a>
+        <NavSpinner />
       </nav>
     </div>
   </header>
@@ -43,14 +43,12 @@
     <slot />
   </main>
 
+
   <!-- Footer -->
   <footer class="border-t border-white/10 mt-20">
     <div class="container mx-auto px-6 py-10 grid sm:grid-cols-3 gap-6 text-sm text-indigo-200">
       <div>
-        <div class="flex items-center gap-2">
-          <img src="/favicon.svg" alt="AURA" class="h-5 w-5" />
-          <span class="font-semibold tracking-tight text-white">AURA</span>
-        </div>
+    <Logo size="xs" />
         <p class="mt-3 text-indigo-300/90">API‑first trust decisions, built for developers.</p>
       </div>
       <div>

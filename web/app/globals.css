@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --aura-bg: #0E0E0E;
+  --aura-fg: #F5F5F7;
+  --aura-primary: #007AFF;
+  --aura-secondary: #7B61FF;
+  --aura-accent: #00E0FF;
+}
+
+html, body, #__next {
+  height: 100%;
+}
+
+body {
+  background: var(--aura-bg);
+  color: var(--aura-fg);
+}
+
+/* AURA UI REBUILD */
+.breathing-glow {
+  box-shadow: 0 0 40px rgba(0,122,255,0.25), 0 0 80px rgba(123,97,255,0.2);
+  animation: auraPulse 4s ease-in-out infinite;
+}
+
+@keyframes auraPulse {
+  0%, 100% { filter: drop-shadow(0 0 20px rgba(0,122,255,0.25)); }
+  50% { filter: drop-shadow(0 0 40px rgba(123,97,255,0.25)); }
+}

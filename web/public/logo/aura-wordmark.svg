@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="640" height="160" viewBox="0 0 640 160" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="AURA wordmark">
+  <defs>
+    <linearGradient id="wg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#007AFF"/>
+      <stop offset="100%" stop-color="#7B61FF"/>
+    </linearGradient>
+  </defs>
+  <rect width="160" height="160" rx="40" fill="url(#wg)"/>
+  <path d="M80 28 L128 132 H112 L100 108 H60 L48 132 H32 L80 28 Z M72 92 H88 L80 74 L72 92 Z" fill="white" fill-opacity="0.95"/>
+  <g transform="translate(190,20)" fill="url(#wg)">
+    <!-- A -->
+    <path d="M0 120 L40 0 L80 120 H64 L56 96 H24 L16 120 H0 Z M31 80 H49 L40 52 L31 80 Z"/>
+    <!-- U -->
+    <path d="M100 0 H116 V78 C116 98 130 112 150 112 C170 112 184 98 184 78 V0 H200 V78 C200 106 178 128 150 128 C122 128 100 106 100 78 V0 Z"/>
+    <!-- R -->
+    <path d="M228 0 H284 C308 0 328 20 328 44 C328 65 314 83 294 88 L332 120 H308 L272 88 H244 V120 H228 V0 Z M244 16 V72 H284 C300 72 312 60 312 44 C312 28 300 16 284 16 H244 Z"/>
+    <!-- A -->
+    <path d="M360 120 L400 0 L440 120 H424 L416 96 H384 L376 120 H360 Z M391 80 H409 L400 52 L391 80 Z"/>
+  </g>
+</svg>

@@ -5,6 +5,8 @@
   import '../../app.css';// Import Tailwind
   import { API_BASE } from '$lib/api';
   import ToastHost from '$lib/components/ToastHost.svelte';
+  import Logo from '$lib/components/Logo.svelte';
+  import NavSpinner from '$lib/components/NavSpinner.svelte';
 
   // Simple check on mount if the token exists.
   // A more robust solution would use hooks or a dedicated auth store.
@@ -77,11 +79,10 @@
 
 </script>
 
-<div class="flex min-h-screen bg-[#111111] text-white">
-  <aside class="w-64 bg-[#111111] border-r border-white/10 flex flex-col fixed inset-y-0 left-0">
+<div class="flex min-h-screen text-white" style="background: radial-gradient(70% 60% at 60% 30%, rgba(51,195,255,0.07), rgba(138,77,255,0.06) 45%, transparent 75%), #0B0D10;">
+  <aside class="w-64 flex flex-col fixed inset-y-0 left-0 a-glass">
     <div class="p-6 flex items-center gap-3 h-16 border-b border-white/10">
-      <div class="w-8 h-8 bg-[#7C3AED] rounded-full"></div>
-      <h1 class="text-xl font-bold text-white">AURA</h1>
+      <Logo size="md" wordmark />
     </div>
 
     <nav class="flex-1 px-4 py-4 space-y-2">
@@ -90,7 +91,7 @@
           href={item.href}
           class={`flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors duration-150 ${
             $page.url.pathname === item.href
-              ? 'bg-[#7C3AED] text-white'
+              ? 'a-gradient text-white'
               : 'text-gray-400 hover:bg-white/10 hover:text-gray-200'
           }`}
         >
@@ -119,12 +120,13 @@
     </div>
   </aside>
 
-  <div class="flex-1 flex flex-col ml-64"> <!-- Offset by sidebar width -->
-    <header class="p-6 flex items-center justify-between border-b border-white/10">
+  <div class="flex-1 flex flex-col ml-64">
+    <header class="p-6 flex items-center justify-between border-b border-white/10 a-glass sticky top-0 z-40">
       <div class="flex items-center gap-4">
         <button class="p-2 rounded-full hover:bg-white/10 text-gray-400 hover:text-gray-200" aria-label="Notifications">
           <span class="material-symbols-outlined text-xl" aria-hidden="true">notifications</span>
         </button>
+        <NavSpinner />
       </div>
 
       <div class="relative">

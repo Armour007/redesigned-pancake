@@ -141,7 +141,8 @@
 </script>
 
 <div class="space-y-6">
-  <div class="flex items-end gap-4">
+  <h1 class="text-3xl font-bold a-text-gradient a-header">Webhooks DLQ</h1>
+  <div class="flex items-end gap-4 a-card a-ribbon">
     <div>
       <label class="block text-sm text-gray-400" for="wh-count">Count</label>
       <input id="wh-count" type="number" min="1" max="500" bind:value={count} class="bg-[#151515] border border-white/10 rounded px-3 py-2 w-28" />
@@ -164,7 +165,7 @@
     <div class="text-gray-400">No webhook DLQ items.</div>
   {:else}
     <div class="text-xs text-gray-400 pb-2">Fetched {fetchedCount} item(s) this session</div>
-    <div class="overflow-x-auto">
+    <div class="overflow-x-auto a-card a-ribbon">
       <table class="min-w-full text-sm">
         <thead>
           <tr class="text-left text-gray-400">

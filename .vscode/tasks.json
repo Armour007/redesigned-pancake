@@ -23,6 +23,13 @@
 					"PORT": "8081",
 					"AURA_FRONTEND_BASE_URL": "http://localhost:5173",
 					"AURA_API_BASE_URL": "http://localhost:8081",
+					"JWT_SECRET": "dev_jwt_secret_123",
+					"DB_HOST": "localhost",
+					"DB_PORT": "5432",
+					"DB_USER": "aura_user",
+					"DB_PASSWORD": "your_strong_password",
+					"DB_NAME": "aura_db",
+					"DB_SSLMODE": "disable",
 					"SMTP_HOST": "",
 					"SMTP_PORT": "",
 					"SMTP_USER": "",
@@ -45,12 +52,9 @@
 		},
 		{
 			"label": "Dev: Start All (local)",
-			"dependsOn": [
-				"DB: up (local)",
-				"Backend: go run :8081",
-				"Frontend: npm run dev"
-			],
-			"dependsOrder": "parallel"
+			"type": "shell",
+			"command": "powershell -NoProfile -ExecutionPolicy Bypass -File ${workspaceFolder}/scripts/dev-start-local.ps1",
+			"problemMatcher": []
 		},
 		{
 			"label": "Dev: Compose up (dev)",
@@ -86,6 +90,13 @@
 					"PORT": "8081",
 					"AURA_FRONTEND_BASE_URL": "http://localhost:5173",
 					"AURA_API_BASE_URL": "http://localhost:8081",
+					"JWT_SECRET": "dev_jwt_secret_123",
+					"DB_HOST": "localhost",
+					"DB_PORT": "5432",
+					"DB_USER": "aura_user",
+					"DB_PASSWORD": "your_strong_password",
+					"DB_NAME": "aura_db",
+					"DB_SSLMODE": "disable",
 					"AURA_DOWNLOAD_SIGNING_KEY": "dev_signing_key_123"
 				}
 			},

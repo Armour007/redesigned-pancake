@@ -1,5 +1,7 @@
 <script lang="ts">
   import { inview } from '$lib/components/inview';
+  import Logo from '$lib/components/Logo.svelte';
+  import LogoGlow from '$lib/components/LogoGlow.svelte';
   const req = `{
   "agent_id": "aura_agent_123",
   "request_context": {
@@ -23,6 +25,9 @@
 
   <div class="container mx-auto px-6 pt-28 pb-20 sm:pt-32 sm:pb-24">
     <div use:inview class="max-w-3xl mx-auto text-center opacity-0 transition duration-700 ease-out translate-y-6 [&.inview]:opacity-100 [&.inview]:translate-y-0">
+      <div class="mx-auto inline-flex items-center justify-center">
+        <LogoGlow wordmark={true} markPx={140} />
+      </div>
       <div class="inline-flex items-center gap-2 rounded-full bg-white/10 ring-1 ring-white/20 px-3 py-1 text-xs text-indigo-200">
         <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true"></span>
         Enterprise-ready authZ and trust engine
@@ -35,7 +40,7 @@
         observability together—so your team ships faster and safer.
       </p>
       <div class="mt-8 flex items-center justify-center gap-4">
-        <a href="/register" class="inline-flex items-center rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white px-5 py-3 text-sm font-medium shadow-lg shadow-indigo-500/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-400">
+        <a href="/register" class="inline-flex items-center rounded-lg a-gradient hover:opacity-90 text-white px-5 py-3 text-sm font-medium a-soft-shadow focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-400">
           Get started — it’s free
         </a>
         <a href="/docs" class="inline-flex items-center rounded-lg bg-white/10 hover:bg-white/20 text-white px-5 py-3 text-sm font-medium ring-1 ring-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white/60">
@@ -47,23 +52,24 @@
       </div>
     </div>
 
-    <!-- Showcase card -->
-    <div use:inview class="mt-16 opacity-0 transition duration-700 ease-out translate-y-6 [&.inview]:opacity-100 [&.inview]:translate-y-0">
-      <div class="mx-auto max-w-6xl rounded-2xl border border-white/10 bg-white/5 backdrop-blur p-4 shadow-2xl shadow-indigo-900/30">
-        <div class="aspect-[16/9] w-full rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 p-6">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
-            <div class="rounded-lg bg-black/60 ring-1 ring-white/10 p-4 overflow-auto">
-              <div class="text-indigo-300 text-xs font-mono">POST /v1/verify</div>
-              <pre class="mt-3 text-xs leading-relaxed text-indigo-100 overflow-x-auto"><code>{req}</code></pre>
-            </div>
-            <div class="rounded-lg bg-black/60 ring-1 ring-white/10 p-4">
-              <div class="text-emerald-300 text-xs font-mono">Response</div>
-              <pre class="mt-3 text-xs leading-relaxed text-emerald-100 overflow-x-auto"><code>{res}</code></pre>
-              <div class="mt-4 text-[10px] text-indigo-200/80">Fully instrumented with Prometheus and OpenTelemetry</div>
-            </div>
-          </div>
-        </div>
-      </div>
+    <!-- Product highlights -->
+    <div class="mt-16 grid md:grid-cols-2 gap-6">
+      <article class="a-card a-ribbon">
+        <h2 class="text-white font-medium">Rules & Policies</h2>
+        <p class="mt-2 text-indigo-200 text-sm">Author decisions with structured policies—reference context like user, device, and risk signals. Test and roll out safely.</p>
+      </article>
+      <article class="a-card a-ribbon">
+        <h2 class="text-white font-medium">Signals & Risk</h2>
+        <p class="mt-2 text-indigo-200 text-sm">Ingest device and behavioral signals. Use built‑in velocity, anomaly, and allow‑list checks.</p>
+      </article>
+      <article class="a-card a-ribbon">
+        <h2 class="text-white font-medium">Webhooks & DLQ</h2>
+        <p class="mt-2 text-indigo-200 text-sm">Reliable delivery with signed webhooks and dead‑letter queue tools to reprocess safely.</p>
+      </article>
+      <article class="a-card a-ribbon">
+        <h2 class="text-white font-medium">Observability</h2>
+        <p class="mt-2 text-indigo-200 text-sm">OpenAPI, request IDs, and first‑class Grafana/Tempo/Prometheus support. Trace a decision end‑to‑end.</p>
+      </article>
     </div>
   </div>
 </section>

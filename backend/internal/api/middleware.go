@@ -18,21 +18,13 @@ import (
 	"time"
 
 	database "github.com/Armour007/aura-backend/internal"
+	"github.com/Armour007/aura-backend/internal/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	redis "github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 )
-
-// getJwtSecret retrieves the JWT secret from environment variables (reuse from jwt.go logic)
-func getJwtSecret() ([]byte, error) {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		return nil, fmt.Errorf("JWT_SECRET environment variable not set")
-	}
-	return []byte(secret), nil
-}
 
 // AuthMiddleware creates a Gin middleware for JWT authentication
 func AuthMiddleware() gin.HandlerFunc {
@@ -52,8 +44,8 @@ func AuthMiddleware() gin.HandlerFunc {
 
 		tokenString := parts[1]
 
-		// Get the secret key
-		jwtSecret, err := getJwtSecret()
+		// Get the secret key via unified utils logic
+		jwtSecret, err := utils.GetJwtSecretBytes()
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "JWT secret configuration error"})
 			return
@@ -172,7 +164,9 @@ func AttestOrAPIKeyAuthMiddleware() gin.HandlerFunc {
 				// Prefer AURA_ATTEST_SIGNING_KEY, fallback to JWT_SECRET
 				key := os.Getenv("AURA_ATTEST_SIGNING_KEY")
 				if key == "" {
-					key = os.Getenv("JWT_SECRET")
+					if s, e := utils.GetJwtSecretString(); e == nil {
+						key = s
+					}
 				}
 				if key == "" {
 					c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "no signing key configured"})

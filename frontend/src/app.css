@@ -5,5 +5,80 @@
 @tailwind components;
 @tailwind utilities;
 
+/* AURA design tokens */
+:root {
+	--a-bg-0: #0B0D10;
+	--a-bg-1: #0F1115;
+	--a-bg-2: #14161A;
+	--a-text-1: #EDEDED;
+	--a-text-2: #BDBDBD;
+	--a-grad-start: #33C3FF; /* cyan */
+	--a-grad-end: #8A4DFF;   /* violet */
+	--a-shadow: 0 12px 24px rgba(0,0,0,0.25), 0 8px 16px rgba(10,10,10,0.2);
+}
+
+/* Global background gradient */
+body {
+	background: radial-gradient(60% 60% at 50% 35%, rgba(51,195,255,0.08), rgba(138,77,255,0.06) 40%, transparent 70%),
+							var(--a-bg-0);
+	color: var(--a-text-1);
+}
+
+/* Utilities */
+.a-gradient {
+	background-image: linear-gradient(90deg, var(--a-grad-start), var(--a-grad-end));
+}
+.a-text-gradient {
+	background: linear-gradient(90deg, var(--a-grad-start), var(--a-grad-end));
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+.a-soft-shadow { box-shadow: 0 12px 24px rgba(124,58,237,0.15), 0 6px 12px rgba(41,168,255,0.10); }
+.a-glass {
+	background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	border: 1px solid rgba(255,255,255,0.08);
+}
+.a-card { @apply rounded-xl p-5 a-glass a-soft-shadow; }
+
+/* Brand ribbon: 1px gradient at card top */
+.a-ribbon { position: relative; }
+.a-ribbon::before {
+	content: "";
+	position: absolute; left: 0; right: 0; top: 0; height: 1px;
+	background-image: linear-gradient(90deg, var(--a-grad-start), var(--a-grad-end));
+	opacity: 0.95; border-radius: 1px;
+}
+
+/* Logo glow helper */
+.aura-glow {
+	position: relative;
+}
+.aura-glow::before {
+	content: "";
+	position: absolute; inset: -12%;
+	background: radial-gradient(60% 60% at 50% 50%, rgba(51,195,255,0.22), rgba(138,77,255,0.18), transparent 70%);
+	filter: blur(24px);
+	z-index: -1;
+	pointer-events: none;
+}
+
+/* Header underline ribbon */
+.a-header { position: relative; padding-bottom: 0.5rem; }
+.a-header::after {
+	content: "";
+	position: absolute; left: 0; bottom: 0; width: 140px; height: 2px;
+	background-image: linear-gradient(90deg, var(--a-grad-start), var(--a-grad-end));
+	border-radius: 2px; opacity: 0.9;
+}
+
+/* Scrollbar subtle styling */
+* { scrollbar-width: thin; scrollbar-color: #3d3f45 transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: #2a2c31; border-radius: 9999px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
 
 

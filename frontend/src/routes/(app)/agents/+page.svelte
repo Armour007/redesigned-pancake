@@ -108,16 +108,16 @@
 			{#if error}
 				<Alert variant="error">Error loading agents: {error}</Alert>
 		{:else if agents && agents.length > 0}
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+	    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 {#each agents as agent (agent.id)}
   <a href={`/agents/${agent.id}`} class="block group">
 	<div
-	  class="bg-[#1A1A1A] rounded-xl p-6 border border-[#333333] transition-all duration-200 group-hover:-translate-y-1 group-hover:shadow-lg group-hover:border-[#7C3AED]/50"
+		  class="a-card a-ribbon transition-all duration-200 group-hover:-translate-y-1 group-hover:shadow-lg"
 	>
 	  <!-- Use group-hover for effects -->
 	  <div class="flex justify-between items-start">
 		 <!-- ... card content (icon, name, id) ... -->
-		 <div class="flex items-center gap-4 min-w-0">
+		  <div class="flex items-center gap-4 min-w-0">
 			<!-- ... icon div ... -->
 			<div class="min-w-0">
 			  <p class="text-base font-bold text-white truncate group-hover:text-[#7C3AED]" title={agent.name || 'Unnamed Agent'}>

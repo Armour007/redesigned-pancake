@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation'; // Import goto for redirection
   import { API_BASE } from '$lib/api';
   import Alert from '$lib/components/Alert.svelte';
+  import Logo from '$lib/components/Logo.svelte';
 
   let fullName = '';
   let email = '';
@@ -50,14 +51,12 @@
   }
 </script>
 
-<div class="flex items-center justify-center min-h-screen px-4">
-  <div class="w-full max-w-md p-8 space-y-6 bg-[#1A1A1A] rounded-xl shadow-lg border border-[#333333]">
-    <div class="flex justify-center">
-      <div class="w-10 h-10 bg-[#7C3AED] rounded-full"></div>
+<div class="flex items-center justify-center min-h-screen px-4" style="background: radial-gradient(60% 60% at 50% 35%, rgba(51,195,255,0.08), rgba(138,77,255,0.06) 40%, transparent 70%), #0B0D10;">
+  <div class="w-full max-w-md a-card a-ribbon space-y-6">
+    <div class="flex justify-center mt-2">
+      <Logo href={null} wordmark={false} glow markPx={40} />
     </div>
-    <h1 class="text-2xl font-bold text-center text-white">
-      Create Your AURA Account
-    </h1>
+    <h1 class="text-2xl font-bold text-center a-text-gradient">Create Your AURA Account</h1>
 
     {#if successMessage}
       <Alert variant="success" className="text-center">{successMessage}</Alert>
@@ -115,7 +114,7 @@
         <button
           type="submit"
           disabled={isLoading}
-          class="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-[#7C3AED] hover:bg-[#6d28d9] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#7C3AED] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          class="w-full flex justify-center py-3 px-4 rounded-lg text-sm font-medium text-white a-gradient hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#7C3AED] disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
         >
           {#if isLoading}
             Creating Account...
